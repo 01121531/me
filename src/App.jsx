@@ -1096,7 +1096,11 @@ function TaskBoardApp() {
   }
 
   async function deleteTask(task) {
-    const ok = await askConfirm('确认删除任务', `确定要删除“${task.title}”吗？任务会进入回收站，可在回收站恢复。`);
+    const ok = await askConfirm(
+      '移入任务回收站',
+      `确定要把“${task.title}”移入回收站吗？可在回收站恢复。`,
+      { confirmText: '移入回收站', tone: 'danger' },
+    );
     if (!ok) return;
     try {
       await api.deleteTask(task.id);
@@ -2377,7 +2381,11 @@ function TaskDrawer({
   }
 
   async function removeLog(log) {
-    const ok = await askConfirm('确认删除日志', '确定要删除这条工作记录日志吗？日志会进入回收站，可恢复。');
+    const ok = await askConfirm(
+      '移入日志回收站',
+      '确定要把这条工作记录日志移入回收站吗？可在回收站恢复。',
+      { confirmText: '移入回收站', tone: 'danger' },
+    );
     if (!ok) return;
     try {
       await api.deleteLog(log.id);
@@ -4035,7 +4043,11 @@ function AttachmentItem({ attachment, kind, askConfirm, addToast, onChanged }) {
   }
 
   async function removeAttachment() {
-    const ok = await askConfirm('确认删除附件', `确定要删除“${attachment.originalName}”吗？附件会进入回收站，可恢复。`);
+    const ok = await askConfirm(
+      '移入附件回收站',
+      `确定要把“${attachment.originalName}”移入回收站吗？可在回收站恢复。`,
+      { confirmText: '移入回收站', tone: 'danger' },
+    );
     if (!ok) return;
     try {
       await api.deleteAttachment(attachment.id);
@@ -4260,6 +4272,7 @@ function StandaloneNotesView({
 }) {
   const [search, setSearch] = useState('');
   const [editingNote, setEditingNote] = useState(null);
+  const [isNoteFormOpen, setIsNoteFormOpen] = useState(false);
   const [activeDragId, setActiveDragId] = useState(null);
   const [includeLinked, setIncludeLinked] = useState(false);
   const [pendingFocusNoteId, setPendingFocusNoteId] = useState(null);
@@ -4320,6 +4333,7 @@ function StandaloneNotesView({
 
   function focusCreateNote() {
     setEditingNote(null);
+    setIsNoteFormOpen(true);
     window.setTimeout(() => noteInputRef.current?.focus(), 0);
   }
 
@@ -4385,7 +4399,11 @@ function StandaloneNotesView({
   }
 
   async function detachNote(note) {
-    const ok = await askConfirm('取消任务关联', `确定要将“${note.title || '未命名笔记'}”从任务中移出，变为独立笔记吗？`);
+    const ok = await askConfirm(
+      '取消任务关联',
+      `确定要将“${note.title || '未命名笔记'}”从任务中移出，变为独立笔记吗？`,
+      { confirmText: '取消关联', tone: 'primary' },
+    );
     if (!ok) return;
     try {
       await api.updateNote(note.id, { taskId: null });
@@ -4410,22 +4428,7 @@ function StandaloneNotesView({
           </button>
         </div>
 
-        <div className="notes-page-layout">
-          <div className="notes-compose-panel">
-            <NoteForm
-              note={editingNote}
-              inputRef={noteInputRef}
-              addToast={addToast}
-              noteCategories={noteCategories}
-              onCancel={() => setEditingNote(null)}
-              onSaved={async () => {
-                setEditingNote(null);
-                await loadNotes(search, includeLinked);
-                await onCategoriesChanged?.();
-              }}
-            />
-          </div>
-
+        <div className="notes-page-layout compact">
           <div className="notes-list-panel">
             <div className="section-title-row">
               <h3>{includeLinked ? '全部笔记' : '全部独立笔记'}</h3>
@@ -4471,6 +4474,7 @@ function StandaloneNotesView({
                     addToast={addToast}
                     onEdit={() => {
                       setEditingNote(note);
+                      setIsNoteFormOpen(true);
                       window.setTimeout(() => noteInputRef.current?.focus(), 0);
                     }}
                     onChanged={() => loadNotes(search, includeLinked)}
@@ -4509,6 +4513,34 @@ function StandaloneNotesView({
             </div>
           </div>
         </div>
+        {isNoteFormOpen && (
+          <SettingsModal
+            title={editingNote ? '编辑笔记' : '创建独立笔记'}
+            description="笔记内容和附件在弹窗里集中处理，列表页保持清爽。"
+            onClose={() => {
+              setEditingNote(null);
+              setIsNoteFormOpen(false);
+            }}
+            wide
+          >
+            <NoteForm
+              note={editingNote}
+              inputRef={noteInputRef}
+              addToast={addToast}
+              noteCategories={noteCategories}
+              onCancel={() => {
+                setEditingNote(null);
+                setIsNoteFormOpen(false);
+              }}
+              onSaved={async () => {
+                setEditingNote(null);
+                setIsNoteFormOpen(false);
+                await loadNotes(search, includeLinked);
+                await onCategoriesChanged?.();
+              }}
+            />
+          </SettingsModal>
+        )}
       </section>
       <DragOverlay dropAnimation={{ duration: 260, easing: 'cubic-bezier(.2, .9, .25, 1.2)' }}>
         {activeDragNote ? (
@@ -5284,7 +5316,11 @@ function TaskAttachmentsSection({ task, attachments, askConfirm, addToast, onCha
   }
 
   async function removeAttachment(attachment) {
-    const ok = await askConfirm('确认删除附件', `确定要删除“${attachment.originalName}”吗？附件会进入回收站，可恢复。`);
+    const ok = await askConfirm(
+      '移入附件回收站',
+      `确定要把“${attachment.originalName}”移入回收站吗？可在回收站恢复。`,
+      { confirmText: '移入回收站', tone: 'danger' },
+    );
     if (!ok) return;
     try {
       await api.deleteTaskAttachment(attachment.id);
@@ -6027,7 +6063,11 @@ const NoteItem = forwardRef(function NoteItem(
   }
 
   async function removeNote() {
-    const ok = await askConfirm('确认删除笔记', '确定要删除这条笔记吗？笔记会进入回收站，可恢复。');
+    const ok = await askConfirm(
+      '移入笔记回收站',
+      '确定要把这条笔记移入回收站吗？可在回收站恢复。',
+      { confirmText: '移入回收站', tone: 'danger' },
+    );
     if (!ok) return;
     try {
       await api.deleteNote(note.id);
@@ -6039,7 +6079,11 @@ const NoteItem = forwardRef(function NoteItem(
   }
 
   async function removeNoteAttachment(attachment) {
-    const ok = await askConfirm('确认删除附件', `确定要删除“${attachment.originalName}”吗？附件会进入回收站，可恢复。`);
+    const ok = await askConfirm(
+      '移入附件回收站',
+      `确定要把“${attachment.originalName}”移入回收站吗？可在回收站恢复。`,
+      { confirmText: '移入回收站', tone: 'danger' },
+    );
     if (!ok) return;
     try {
       await api.deleteNoteAttachment(attachment.id);
@@ -6051,7 +6095,11 @@ const NoteItem = forwardRef(function NoteItem(
   }
 
   async function restoreVersion(version) {
-    const ok = await askConfirm('确认回退笔记', `确定要把“${note.title || '未命名笔记'}”回退到该版本的变更前内容吗？当前内容会先保存为一个新版本。`);
+    const ok = await askConfirm(
+      '确认回退笔记',
+      `确定要把“${note.title || '未命名笔记'}”回退到该版本的变更前内容吗？当前内容会先保存为一个新版本。`,
+      { confirmText: '确认回退', tone: 'primary' },
+    );
     if (!ok) return;
     setVersionState((current) => ({ ...current, restoring: true, error: '' }));
     try {
@@ -6907,7 +6955,7 @@ function LogEditDrawer({ task, log, askConfirm, addToast, onClose, onChanged }) 
   );
 }
 
-function SystemView({ addToast }) {
+function SystemView({ addToast, compact = false }) {
   const [backups, setBackups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -6967,11 +7015,15 @@ function SystemView({ addToast }) {
   }
 
   return (
-    <section className="system-page">
+    <section className={compact ? 'system-page compact' : 'system-page'}>
       <div className="system-head">
         <div>
-          <span>数据安全</span>
-          <h2>系统与备份</h2>
+          {!compact && (
+            <>
+              <span>数据安全</span>
+              <h2>系统与备份</h2>
+            </>
+          )}
           <p>备份会导出 MySQL 核心表并复制 uploads 文件；恢复仍请使用命令行预演确认后执行。</p>
         </div>
         <div className="system-actions">
@@ -7065,6 +7117,7 @@ function SettingsView({ addToast, askConfirm }) {
   });
   const [updateBranch, setUpdateBranch] = useState('main');
   const [updateStatus, setUpdateStatus] = useState(null);
+  const [settingsModal, setSettingsModal] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -7224,6 +7277,224 @@ function SettingsView({ addToast, askConfirm }) {
       : updateStatus?.running
         ? 'running'
         : 'idle';
+  const updateStatusLabel = updateStatus?.running
+    ? '更新中'
+    : updateStatus?.status === 'completed'
+      ? '已完成'
+      : updateStatus?.status === 'failed'
+        ? '失败'
+        : '待命';
+  const aiConfigured = Boolean(settings?.ai?.litellm?.apiKey?.configured);
+  const closeSettingsModal = () => setSettingsModal('');
+
+  function renderAiConfigForm() {
+    return (
+      <form className="settings-form-grid" onSubmit={saveAiConfig}>
+        <label>
+          <span>LiteLLM Base URL</span>
+          <input
+            value={aiForm.litellmBaseUrl}
+            onChange={(event) => updateAiField('litellmBaseUrl', event.target.value)}
+            placeholder="https://example.com/v1"
+          />
+        </label>
+        <label>
+          <span>LiteLLM API Key</span>
+          <input
+            type="password"
+            value={aiForm.litellmApiKey}
+            onChange={(event) => updateAiField('litellmApiKey', event.target.value)}
+            placeholder="留空保持原值"
+            autoComplete="new-password"
+          />
+          <em>{secretHint(settings?.ai?.litellm?.apiKey)}</em>
+        </label>
+        <label>
+          <span>聊天模型</span>
+          <input
+            value={aiForm.litellmChatModel}
+            onChange={(event) => updateAiField('litellmChatModel', event.target.value)}
+            placeholder="mimo-v2.5-pro"
+          />
+        </label>
+        <label>
+          <span>Embedding 模型</span>
+          <input
+            value={aiForm.litellmEmbeddingModel}
+            onChange={(event) => updateAiField('litellmEmbeddingModel', event.target.value)}
+            placeholder="embedding model"
+          />
+        </label>
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={aiForm.indexingEnabled}
+            onChange={(event) => updateAiField('indexingEnabled', event.target.checked)}
+          />
+          <span>启用向量索引 Worker</span>
+        </label>
+        <label>
+          <span>Qdrant URL</span>
+          <input
+            value={aiForm.qdrantUrl}
+            onChange={(event) => updateAiField('qdrantUrl', event.target.value)}
+            placeholder="http://127.0.0.1:6333"
+          />
+        </label>
+        <label>
+          <span>Qdrant API Key</span>
+          <input
+            type="password"
+            value={aiForm.qdrantApiKey}
+            onChange={(event) => updateAiField('qdrantApiKey', event.target.value)}
+            placeholder="留空保持原值"
+            autoComplete="new-password"
+          />
+          <em>{secretHint(settings?.ai?.qdrant?.apiKey)}</em>
+        </label>
+        <label>
+          <span>Qdrant Collection</span>
+          <input
+            value={aiForm.qdrantCollection}
+            onChange={(event) => updateAiField('qdrantCollection', event.target.value)}
+            placeholder="assistant_task_board"
+          />
+        </label>
+        <label>
+          <span>OCR Base URL</span>
+          <input
+            value={aiForm.ocrBaseUrl}
+            onChange={(event) => updateAiField('ocrBaseUrl', event.target.value)}
+            placeholder="留空时复用 LiteLLM"
+          />
+        </label>
+        <label>
+          <span>OCR API Key</span>
+          <input
+            type="password"
+            value={aiForm.ocrApiKey}
+            onChange={(event) => updateAiField('ocrApiKey', event.target.value)}
+            placeholder="留空保持原值"
+            autoComplete="new-password"
+          />
+          <em>{secretHint(settings?.ai?.ocr?.apiKey)}</em>
+        </label>
+        <label>
+          <span>OCR 模型</span>
+          <input
+            value={aiForm.ocrModel}
+            onChange={(event) => updateAiField('ocrModel', event.target.value)}
+            placeholder="留空时复用聊天模型"
+          />
+        </label>
+        <label>
+          <span>PDF OCR 页数上限</span>
+          <input
+            type="number"
+            min="1"
+            max="100"
+            value={aiForm.ocrMaxPdfPages}
+            onChange={(event) => updateAiField('ocrMaxPdfPages', event.target.value)}
+          />
+        </label>
+        <label>
+          <span>触发 OCR 的最少文本字数</span>
+          <input
+            type="number"
+            min="1"
+            max="2000"
+            value={aiForm.ocrMinTextChars}
+            onChange={(event) => updateAiField('ocrMinTextChars', event.target.value)}
+          />
+        </label>
+        <div className="settings-form-actions">
+          <button type="button" className="ghost-button" onClick={testAiConfig} disabled={Boolean(busy)}>
+            <Sparkles size={15} />
+            {busy === 'ai-test' ? '测试中...' : '测试 AI 连接'}
+          </button>
+          <button type="submit" className="icon-button primary" disabled={Boolean(busy)}>
+            <Save size={15} />
+            {busy === 'ai-save' ? '保存中...' : '保存 AI 配置'}
+          </button>
+        </div>
+      </form>
+    );
+  }
+
+  function renderPasswordForm() {
+    return (
+      <form className="settings-stack-form" onSubmit={savePassword}>
+        <label>
+          <span>当前密码</span>
+          <input
+            type="password"
+            value={passwordForm.currentPassword}
+            onChange={(event) => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })}
+            autoComplete="current-password"
+            disabled={!settings?.auth?.passwordEnabled}
+          />
+        </label>
+        <label>
+          <span>新密码</span>
+          <input
+            type="password"
+            value={passwordForm.newPassword}
+            onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })}
+            autoComplete="new-password"
+            disabled={!settings?.auth?.passwordEnabled}
+          />
+        </label>
+        <label>
+          <span>确认新密码</span>
+          <input
+            type="password"
+            value={passwordForm.confirmPassword}
+            onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })}
+            autoComplete="new-password"
+            disabled={!settings?.auth?.passwordEnabled}
+          />
+        </label>
+        <button type="submit" className="icon-button primary" disabled={Boolean(busy) || !settings?.auth?.passwordEnabled}>
+          <ShieldCheck size={15} />
+          {busy === 'password' ? '修改中...' : '保存新密码'}
+        </button>
+        {!settings?.auth?.passwordEnabled && (
+          <p className="settings-help-text">当前不是密码登录模式，需要先在服务器 .env 中启用 AUTH_MODE=password。</p>
+        )}
+      </form>
+    );
+  }
+
+  function renderUpdatePanel() {
+    return (
+      <div className="settings-stack-form">
+        <label>
+          <span>更新分支</span>
+          <input
+            value={updateBranch}
+            onChange={(event) => setUpdateBranch(event.target.value)}
+            placeholder="main"
+          />
+        </label>
+        <div className="settings-inline-actions">
+          <button type="button" className="ghost-button" onClick={refreshUpdateStatus} disabled={Boolean(busy)}>
+            <RefreshCw size={15} />
+            查看状态
+          </button>
+          <button type="button" className="icon-button primary" onClick={startUpdate} disabled={Boolean(busy) || updateStatus?.running}>
+            <Download size={15} />
+            {updateStatus?.running ? '更新中...' : '从 GitHub 更新'}
+          </button>
+        </div>
+        {updateStatus?.error && <p className="settings-error-text">{updateStatus.error}</p>}
+        <div className="settings-update-log" aria-label="在线更新日志">
+          {(updateStatus?.logs || []).length
+            ? updateStatus.logs.map((line, index) => <code key={`${line}-${index}`}>{line}</code>)
+            : <span>暂无更新日志。</span>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <section className="settings-page">
@@ -7244,250 +7515,126 @@ function SettingsView({ addToast, askConfirm }) {
 
       {!loading && (
         <>
-          <div className="settings-grid">
-            <section className="settings-card settings-card-wide">
-              <div className="settings-card-head">
-                <div>
-                  <span>AI</span>
-                  <h3>大模型与检索配置</h3>
-                </div>
-                <span className={settings?.ai?.litellm?.apiKey?.configured ? 'settings-status-pill ok' : 'settings-status-pill warning'}>
-                  {settings?.ai?.litellm?.apiKey?.configured ? '已配置' : '未配置'}
-                </span>
-              </div>
-              <form className="settings-form-grid" onSubmit={saveAiConfig}>
-                <label>
-                  <span>LiteLLM Base URL</span>
-                  <input
-                    value={aiForm.litellmBaseUrl}
-                    onChange={(event) => updateAiField('litellmBaseUrl', event.target.value)}
-                    placeholder="https://example.com/v1"
-                  />
-                </label>
-                <label>
-                  <span>LiteLLM API Key</span>
-                  <input
-                    type="password"
-                    value={aiForm.litellmApiKey}
-                    onChange={(event) => updateAiField('litellmApiKey', event.target.value)}
-                    placeholder="留空保持原值"
-                    autoComplete="new-password"
-                  />
-                  <em>{secretHint(settings?.ai?.litellm?.apiKey)}</em>
-                </label>
-                <label>
-                  <span>聊天模型</span>
-                  <input
-                    value={aiForm.litellmChatModel}
-                    onChange={(event) => updateAiField('litellmChatModel', event.target.value)}
-                    placeholder="mimo-v2.5-pro"
-                  />
-                </label>
-                <label>
-                  <span>Embedding 模型</span>
-                  <input
-                    value={aiForm.litellmEmbeddingModel}
-                    onChange={(event) => updateAiField('litellmEmbeddingModel', event.target.value)}
-                    placeholder="embedding model"
-                  />
-                </label>
-                <label className="settings-toggle">
-                  <input
-                    type="checkbox"
-                    checked={aiForm.indexingEnabled}
-                    onChange={(event) => updateAiField('indexingEnabled', event.target.checked)}
-                  />
-                  <span>启用向量索引 Worker</span>
-                </label>
-                <label>
-                  <span>Qdrant URL</span>
-                  <input
-                    value={aiForm.qdrantUrl}
-                    onChange={(event) => updateAiField('qdrantUrl', event.target.value)}
-                    placeholder="http://127.0.0.1:6333"
-                  />
-                </label>
-                <label>
-                  <span>Qdrant API Key</span>
-                  <input
-                    type="password"
-                    value={aiForm.qdrantApiKey}
-                    onChange={(event) => updateAiField('qdrantApiKey', event.target.value)}
-                    placeholder="留空保持原值"
-                    autoComplete="new-password"
-                  />
-                  <em>{secretHint(settings?.ai?.qdrant?.apiKey)}</em>
-                </label>
-                <label>
-                  <span>Qdrant Collection</span>
-                  <input
-                    value={aiForm.qdrantCollection}
-                    onChange={(event) => updateAiField('qdrantCollection', event.target.value)}
-                    placeholder="assistant_task_board"
-                  />
-                </label>
-                <label>
-                  <span>OCR Base URL</span>
-                  <input
-                    value={aiForm.ocrBaseUrl}
-                    onChange={(event) => updateAiField('ocrBaseUrl', event.target.value)}
-                    placeholder="留空时复用 LiteLLM"
-                  />
-                </label>
-                <label>
-                  <span>OCR API Key</span>
-                  <input
-                    type="password"
-                    value={aiForm.ocrApiKey}
-                    onChange={(event) => updateAiField('ocrApiKey', event.target.value)}
-                    placeholder="留空保持原值"
-                    autoComplete="new-password"
-                  />
-                  <em>{secretHint(settings?.ai?.ocr?.apiKey)}</em>
-                </label>
-                <label>
-                  <span>OCR 模型</span>
-                  <input
-                    value={aiForm.ocrModel}
-                    onChange={(event) => updateAiField('ocrModel', event.target.value)}
-                    placeholder="留空时复用聊天模型"
-                  />
-                </label>
-                <label>
-                  <span>PDF OCR 页数上限</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={aiForm.ocrMaxPdfPages}
-                    onChange={(event) => updateAiField('ocrMaxPdfPages', event.target.value)}
-                  />
-                </label>
-                <label>
-                  <span>触发 OCR 的最少文本字数</span>
-                  <input
-                    type="number"
-                    min="1"
-                    max="2000"
-                    value={aiForm.ocrMinTextChars}
-                    onChange={(event) => updateAiField('ocrMinTextChars', event.target.value)}
-                  />
-                </label>
-                <div className="settings-form-actions">
-                  <button type="button" className="ghost-button" onClick={testAiConfig} disabled={Boolean(busy)}>
-                    <Sparkles size={15} />
-                    {busy === 'ai-test' ? '测试中...' : '测试 AI 连接'}
-                  </button>
-                  <button type="submit" className="icon-button primary" disabled={Boolean(busy)}>
-                    <Save size={15} />
-                    {busy === 'ai-save' ? '保存中...' : '保存 AI 配置'}
-                  </button>
-                </div>
-              </form>
-            </section>
-
-            <section className="settings-card">
-              <div className="settings-card-head">
-                <div>
-                  <span>安全</span>
-                  <h3>修改访问密码</h3>
-                </div>
-                <span className={settings?.auth?.passwordEnabled ? 'settings-status-pill ok' : 'settings-status-pill warning'}>
-                  {settings?.auth?.passwordEnabled ? '密码登录' : '未启用'}
-                </span>
-              </div>
-              <form className="settings-stack-form" onSubmit={savePassword}>
-                <label>
-                  <span>当前密码</span>
-                  <input
-                    type="password"
-                    value={passwordForm.currentPassword}
-                    onChange={(event) => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })}
-                    autoComplete="current-password"
-                    disabled={!settings?.auth?.passwordEnabled}
-                  />
-                </label>
-                <label>
-                  <span>新密码</span>
-                  <input
-                    type="password"
-                    value={passwordForm.newPassword}
-                    onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })}
-                    autoComplete="new-password"
-                    disabled={!settings?.auth?.passwordEnabled}
-                  />
-                </label>
-                <label>
-                  <span>确认新密码</span>
-                  <input
-                    type="password"
-                    value={passwordForm.confirmPassword}
-                    onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })}
-                    autoComplete="new-password"
-                    disabled={!settings?.auth?.passwordEnabled}
-                  />
-                </label>
-                <button type="submit" className="icon-button primary" disabled={Boolean(busy) || !settings?.auth?.passwordEnabled}>
-                  <ShieldCheck size={15} />
-                  {busy === 'password' ? '修改中...' : '保存新密码'}
-                </button>
-                {!settings?.auth?.passwordEnabled && (
-                  <p className="settings-help-text">当前不是密码登录模式，需要先在服务器 .env 中启用 AUTH_MODE=password。</p>
-                )}
-              </form>
-            </section>
-
-            <section className="settings-card">
-              <div className="settings-card-head">
-                <div>
-                  <span>部署</span>
-                  <h3>GitHub 在线更新</h3>
-                </div>
-                <span className={`settings-status-pill ${updateTone}`}>
-                  {updateStatus?.running
-                    ? '更新中'
-                    : updateStatus?.status === 'completed'
-                      ? '已完成'
-                      : updateStatus?.status === 'failed'
-                        ? '失败'
-                        : '待命'}
-                </span>
-              </div>
-              <div className="settings-stack-form">
-                <label>
-                  <span>更新分支</span>
-                  <input
-                    value={updateBranch}
-                    onChange={(event) => setUpdateBranch(event.target.value)}
-                    placeholder="main"
-                  />
-                </label>
-                <div className="settings-inline-actions">
-                  <button type="button" className="ghost-button" onClick={refreshUpdateStatus} disabled={Boolean(busy)}>
-                    <RefreshCw size={15} />
-                    查看状态
-                  </button>
-                  <button type="button" className="icon-button primary" onClick={startUpdate} disabled={Boolean(busy) || updateStatus?.running}>
-                    <Download size={15} />
-                    {updateStatus?.running ? '更新中...' : '从 GitHub 更新'}
-                  </button>
-                </div>
-                {updateStatus?.error && <p className="settings-error-text">{updateStatus.error}</p>}
-                <div className="settings-update-log" aria-label="在线更新日志">
-                  {(updateStatus?.logs || []).length
-                    ? updateStatus.logs.map((line, index) => <code key={`${line}-${index}`}>{line}</code>)
-                    : <span>暂无更新日志。</span>}
-                </div>
-              </div>
-            </section>
+          <div className="settings-overview-grid">
+            <SettingsEntryCard
+              icon={Sparkles}
+              eyebrow="AI"
+              title="大模型与检索配置"
+              status={aiConfigured ? '已配置' : '未配置'}
+              statusClassName={aiConfigured ? 'ok' : 'warning'}
+              actionLabel="打开 AI 配置"
+              onOpen={() => setSettingsModal('ai')}
+            >
+              <dl className="settings-summary-list">
+                <div><dt>聊天模型</dt><dd>{settings?.ai?.litellm?.chatModel || '未设置'}</dd></div>
+                <div><dt>向量索引</dt><dd>{settings?.ai?.indexingEnabled ? '已启用' : '未启用'}</dd></div>
+                <div><dt>OCR 模型</dt><dd>{settings?.ai?.ocr?.effectiveModel || settings?.ai?.ocr?.model || '未设置'}</dd></div>
+              </dl>
+            </SettingsEntryCard>
+            <SettingsEntryCard
+              icon={ShieldCheck}
+              eyebrow="安全"
+              title="访问密码"
+              status={settings?.auth?.passwordEnabled ? '密码登录' : '未启用'}
+              statusClassName={settings?.auth?.passwordEnabled ? 'ok' : 'warning'}
+              actionLabel="修改密码"
+              onOpen={() => setSettingsModal('password')}
+            >
+              <p className="settings-card-copy">修改进入任务台的访问密码，密码不会下发到前端。</p>
+            </SettingsEntryCard>
+            <SettingsEntryCard
+              icon={Download}
+              eyebrow="部署"
+              title="GitHub 在线更新"
+              status={updateStatusLabel}
+              statusClassName={updateTone}
+              actionLabel="查看更新"
+              onOpen={() => setSettingsModal('update')}
+            >
+              <dl className="settings-summary-list">
+                <div><dt>分支</dt><dd>{updateBranch || 'main'}</dd></div>
+                <div><dt>日志</dt><dd>{updateStatus?.logs?.length || 0} 条</dd></div>
+              </dl>
+            </SettingsEntryCard>
+            <SettingsEntryCard
+              icon={Save}
+              eyebrow="数据安全"
+              title="系统备份"
+              status="独立管理"
+              statusClassName="idle"
+              actionLabel="打开备份"
+              onOpen={() => setSettingsModal('backup')}
+            >
+              <p className="settings-card-copy">创建备份、校验最近备份，并查看备份记录。</p>
+            </SettingsEntryCard>
           </div>
 
-          <div className="settings-maintenance">
-            <SystemView addToast={addToast} />
-          </div>
+          {settingsModal === 'ai' && (
+            <SettingsModal title="大模型与检索配置" description="调整 AI 网关、向量索引、OCR 和检索服务配置。" onClose={closeSettingsModal} wide>
+              {renderAiConfigForm()}
+            </SettingsModal>
+          )}
+          {settingsModal === 'password' && (
+            <SettingsModal title="修改访问密码" description="保存后下次登录会使用新的访问密码。" onClose={closeSettingsModal}>
+              {renderPasswordForm()}
+            </SettingsModal>
+          )}
+          {settingsModal === 'update' && (
+            <SettingsModal title="GitHub 在线更新" description="从 GitHub 拉取代码并重新构建；不会删除数据库、附件或 .env。" onClose={closeSettingsModal}>
+              {renderUpdatePanel()}
+            </SettingsModal>
+          )}
+          {settingsModal === 'backup' && (
+            <SettingsModal title="系统与备份" description="备份和校验属于低频维护操作，集中在这里处理。" onClose={closeSettingsModal} wide>
+              <SystemView addToast={addToast} compact />
+            </SettingsModal>
+          )}
         </>
       )}
     </section>
+  );
+}
+
+function SettingsEntryCard({ icon: IconComponent, eyebrow, title, status, statusClassName = 'idle', actionLabel, onOpen, children }) {
+  return (
+    <section className="settings-entry-card">
+      <div className="settings-entry-icon">
+        <IconComponent size={19} />
+      </div>
+      <div className="settings-card-head">
+        <div>
+          <span>{eyebrow}</span>
+          <h3>{title}</h3>
+        </div>
+        <span className={`settings-status-pill ${statusClassName}`}>{status}</span>
+      </div>
+      <div className="settings-entry-body">{children}</div>
+      <button type="button" className="ghost-button" onClick={onOpen}>
+        <ExternalLink size={15} />
+        {actionLabel}
+      </button>
+    </section>
+  );
+}
+
+function SettingsModal({ title, description, onClose, wide = false, children }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
+      <section className={wide ? 'settings-modal wide' : 'settings-modal'} onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div>
+            <h2>{title}</h2>
+            {description && <p>{description}</p>}
+          </div>
+          <button type="button" className="round-button small" onClick={onClose} title="关闭">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="settings-modal-body">
+          {children}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -7501,6 +7648,7 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [reportModal, setReportModal] = useState('');
   const [aiSummary, setAiSummary] = useState(null);
   const [aiSummaryType, setAiSummaryType] = useState('daily');
   const [aiLoading, setAiLoading] = useState(false);
@@ -7619,79 +7767,18 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
           <RefreshCw size={16} />
           刷新
         </button>
-        <div className="report-export-actions" aria-label="导出当前汇总">
-          <a className="ghost-button" href={markdownExportUrl}>
-            <Download size={16} />
-            导出 Markdown
-          </a>
-          <a className="ghost-button" href={excelExportUrl}>
-            <Download size={16} />
-            导出 Excel
-          </a>
-          <a className="ghost-button" href={pdfExportUrl}>
-            <Download size={16} />
-            导出 PDF
-          </a>
-        </div>
+        <button className="ghost-button" type="button" onClick={() => setReportModal('ai')} disabled={!report || loading}>
+          <Sparkles size={16} />
+          AI 汇总
+        </button>
+        <button className="ghost-button" type="button" onClick={() => setReportModal('export')} disabled={!report || loading}>
+          <Download size={16} />
+          导出
+        </button>
       </div>
       {error && <div className="notice">{error}</div>}
       {report && (
         <>
-          <section className="ai-report-summary-panel">
-            <div className="ai-report-summary-head">
-              <div>
-                <span>AI 汇总</span>
-                <h2>生成日报、周报或阶段总结</h2>
-              </div>
-              <div className="ai-report-actions">
-                {[
-                  ['daily', '生成日报'],
-                  ['weekly', '生成周报'],
-                  ['stage', '阶段总结'],
-                ].map(([type, label]) => (
-                  <button
-                    type="button"
-                    key={type}
-                    className={aiSummaryType === type ? 'ghost-button active' : 'ghost-button'}
-                    onClick={() => generateAiSummary(type)}
-                    disabled={aiLoading}
-                  >
-                    <Sparkles size={14} />
-                    {aiLoading && aiSummaryType === type ? '生成中...' : label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {aiError && <div className="notice">{aiError}</div>}
-            {aiSummary && (
-              <div className="ai-report-result">
-                <div className="ai-report-result-head">
-                  <span>{aiSummary.from} 至 {aiSummary.to}</span>
-                  <div className="ai-report-result-actions">
-                    <CopyButton
-                      value={aiContentToPlainText(aiSummary.html)}
-                      label="复制总结"
-                      copiedLabel="已复制"
-                      className="ghost-button"
-                    />
-                    <button
-                      type="button"
-                      className={savedSummaryNoteId ? 'ghost-button active' : 'ghost-button'}
-                      onClick={saveAiSummaryAsNote}
-                      disabled={noteSaving || Boolean(savedSummaryNoteId)}
-                    >
-                      <Save size={14} />
-                      {noteSaving ? '保存中...' : savedSummaryNoteId ? '已保存为笔记' : '保存为笔记'}
-                    </button>
-                  </div>
-                </div>
-                <div
-                  className="ai-html-content"
-                  dangerouslySetInnerHTML={{ __html: toSafeAiHtml(aiSummary.html) }}
-                />
-              </div>
-            )}
-          </section>
           <div className="report-grid">
             <Stat label="记录日志条数" value={report.logs.length} />
             <Stat label="累计投入时长" value={`${report.totalHours}h`} />
@@ -7730,6 +7817,79 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
               {!report.nextSteps.length && <div className="empty-column">无下一步待办项</div>}
             </ReportPanel>
           </div>
+          {reportModal === 'ai' && (
+            <SettingsModal title="AI 汇总" description="生成日报、周报或阶段总结；结果确认后可以保存为独立笔记。" onClose={() => setReportModal('')} wide>
+              <section className="ai-report-summary-panel compact">
+                <div className="ai-report-actions">
+                  {[
+                    ['daily', '生成日报'],
+                    ['weekly', '生成周报'],
+                    ['stage', '阶段总结'],
+                  ].map(([type, label]) => (
+                    <button
+                      type="button"
+                      key={type}
+                      className={aiSummaryType === type ? 'ghost-button active' : 'ghost-button'}
+                      onClick={() => generateAiSummary(type)}
+                      disabled={aiLoading}
+                    >
+                      <Sparkles size={14} />
+                      {aiLoading && aiSummaryType === type ? '生成中...' : label}
+                    </button>
+                  ))}
+                </div>
+                {aiError && <div className="notice">{aiError}</div>}
+                {aiSummary ? (
+                  <div className="ai-report-result">
+                    <div className="ai-report-result-head">
+                      <span>{aiSummary.from} 至 {aiSummary.to}</span>
+                      <div className="ai-report-result-actions">
+                        <CopyButton
+                          value={aiContentToPlainText(aiSummary.html)}
+                          label="复制总结"
+                          copiedLabel="已复制"
+                          className="ghost-button"
+                        />
+                        <button
+                          type="button"
+                          className={savedSummaryNoteId ? 'ghost-button active' : 'ghost-button'}
+                          onClick={saveAiSummaryAsNote}
+                          disabled={noteSaving || Boolean(savedSummaryNoteId)}
+                        >
+                          <Save size={14} />
+                          {noteSaving ? '保存中...' : savedSummaryNoteId ? '已保存为笔记' : '保存为笔记'}
+                        </button>
+                      </div>
+                    </div>
+                    <div
+                      className="ai-html-content"
+                      dangerouslySetInnerHTML={{ __html: toSafeAiHtml(aiSummary.html) }}
+                    />
+                  </div>
+                ) : (
+                  <div className="empty-column">选择一种汇总类型后开始生成。</div>
+                )}
+              </section>
+            </SettingsModal>
+          )}
+          {reportModal === 'export' && (
+            <SettingsModal title="导出当前汇总" description="选择需要的格式下载当前日期范围内的汇总资料。" onClose={() => setReportModal('')}>
+              <div className="report-export-modal-actions" aria-label="导出当前汇总">
+                <a className="ghost-button" href={markdownExportUrl}>
+                  <Download size={16} />
+                  导出 Markdown
+                </a>
+                <a className="ghost-button" href={excelExportUrl}>
+                  <Download size={16} />
+                  导出 Excel
+                </a>
+                <a className="ghost-button" href={pdfExportUrl}>
+                  <Download size={16} />
+                  导出 PDF
+                </a>
+              </div>
+            </SettingsModal>
+          )}
         </>
       )}
     </section>
@@ -7765,6 +7925,7 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
   const [error, setError] = useState('');
   const [selectedKeys, setSelectedKeys] = useState(new Set());
   const [previewItem, setPreviewItem] = useState(null);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
 
   async function loadAttachments(nextFilters = filters) {
     setLoading(true);
@@ -7819,6 +7980,13 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
     [data.items, selectedKeys],
   );
   const allVisibleSelected = Boolean(data.items?.length) && data.items.every((item) => selectedKeys.has(attachmentItemKey(item)));
+  const activeFilterCount = [
+    filters.taskId,
+    filters.fileType !== 'all' ? filters.fileType : '',
+    filters.textStatus !== 'all' ? filters.textStatus : '',
+    filters.from,
+    filters.to,
+  ].filter(Boolean).length;
 
   function toggleAttachmentSelection(item) {
     const key = attachmentItemKey(item);
@@ -7843,12 +8011,32 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
     });
   }
 
+  function applyAttachmentFilters() {
+    setIsFiltersOpen(false);
+    loadAttachments(filters);
+  }
+
+  function resetAttachmentFilters() {
+    const nextFilters = {
+      ...filters,
+      taskId: '',
+      fileType: 'all',
+      textStatus: 'all',
+      from: '',
+      to: '',
+    };
+    setFilters(nextFilters);
+    setIsFiltersOpen(false);
+    loadAttachments(nextFilters);
+  }
+
   async function moveSelectedToTrash() {
     if (!selectedItems.length) return;
     const ok = askConfirm
       ? await askConfirm(
         '移入附件回收站',
         `确定要把选中的 ${selectedItems.length} 个附件移入回收站吗？文件会保留在本机，可在回收站恢复。`,
+        { confirmText: '移入回收站', tone: 'danger' },
       )
       : true;
     if (!ok) return;
@@ -7938,50 +8126,17 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
             placeholder="搜索文件名、备注或来源..."
           />
         </label>
-        <label>
-          <span>任务</span>
-          <select value={filters.taskId} onChange={(event) => updateFilter({ taskId: event.target.value })}>
-            <option value="">全部任务</option>
-            {tasks.map((task) => (
-              <option key={task.id} value={task.id}>{task.title}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>类型</span>
-          <select value={filters.fileType} onChange={(event) => updateFilter({ fileType: event.target.value })}>
-            <option value="all">全部文件</option>
-            <option value="image">图片</option>
-            <option value="pdf">PDF</option>
-            <option value="document">Word/文档</option>
-            <option value="spreadsheet">Excel/表格</option>
-            <option value="archive">压缩包</option>
-            <option value="other">其他</option>
-          </select>
-        </label>
-        <label>
-          <span>识别</span>
-          <select value={filters.textStatus} onChange={(event) => updateFilter({ textStatus: event.target.value })}>
-            <option value="all">全部状态</option>
-            <option value="completed">已识别</option>
-            <option value="pending">待识别</option>
-            <option value="processing">识别中</option>
-            <option value="failed">识别失败</option>
-            <option value="unsupported">不支持</option>
-            <option value="none">未入队</option>
-          </select>
-        </label>
-        <label>
-          <span>开始</span>
-          <input type="date" value={filters.from} onChange={(event) => updateFilter({ from: event.target.value })} />
-        </label>
-        <label>
-          <span>结束</span>
-          <input type="date" value={filters.to} onChange={(event) => updateFilter({ to: event.target.value })} />
-        </label>
         <button className="ghost-button" type="button" onClick={() => loadAttachments()} disabled={loading}>
+          <Search size={15} />
+          搜索
+        </button>
+        <button className="ghost-button" type="button" onClick={() => setIsFiltersOpen(true)}>
           <ListFilter size={15} />
-          筛选
+          {activeFilterCount ? `筛选 ${activeFilterCount}` : '筛选'}
+        </button>
+        <button className="ghost-button" type="button" onClick={toggleSelectAllVisible} disabled={!data.items?.length || loading}>
+          <CheckCircle2 size={15} />
+          {allVisibleSelected ? '取消全选' : '选择当前页'}
         </button>
         <div className="attachment-view-toggle" role="group" aria-label="附件显示方式">
           <button
@@ -8004,11 +8159,8 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
         </div>
       </div>
 
+      {selectedItems.length > 0 && (
       <div className="attachment-bulk-bar">
-        <button className="ghost-button" type="button" onClick={toggleSelectAllVisible} disabled={!data.items?.length || loading}>
-          <CheckCircle2 size={15} />
-          {allVisibleSelected ? '取消全选' : '选择当前页'}
-        </button>
         <span>已选择 {selectedItems.length} 个附件</span>
         <button
           className="danger-button"
@@ -8034,6 +8186,64 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
           </button>
         )}
       </div>
+      )}
+
+      {isFiltersOpen && (
+        <SettingsModal title="筛选附件" description="按任务、文件类型、识别状态和上传日期缩小附件列表。" onClose={() => setIsFiltersOpen(false)}>
+          <div className="attachment-filter-modal">
+            <label>
+              <span>任务</span>
+              <select value={filters.taskId} onChange={(event) => updateFilter({ taskId: event.target.value })}>
+                <option value="">全部任务</option>
+                {tasks.map((task) => (
+                  <option key={task.id} value={task.id}>{task.title}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>类型</span>
+              <select value={filters.fileType} onChange={(event) => updateFilter({ fileType: event.target.value })}>
+                <option value="all">全部文件</option>
+                <option value="image">图片</option>
+                <option value="pdf">PDF</option>
+                <option value="document">Word/文档</option>
+                <option value="spreadsheet">Excel/表格</option>
+                <option value="archive">压缩包</option>
+                <option value="other">其他</option>
+              </select>
+            </label>
+            <label>
+              <span>识别</span>
+              <select value={filters.textStatus} onChange={(event) => updateFilter({ textStatus: event.target.value })}>
+                <option value="all">全部状态</option>
+                <option value="completed">已识别</option>
+                <option value="pending">待识别</option>
+                <option value="processing">识别中</option>
+                <option value="failed">识别失败</option>
+                <option value="unsupported">不支持</option>
+                <option value="none">未入队</option>
+              </select>
+            </label>
+            <label>
+              <span>开始日期</span>
+              <input type="date" value={filters.from} onChange={(event) => updateFilter({ from: event.target.value })} />
+            </label>
+            <label>
+              <span>结束日期</span>
+              <input type="date" value={filters.to} onChange={(event) => updateFilter({ to: event.target.value })} />
+            </label>
+            <div className="settings-form-actions">
+              <button type="button" className="ghost-button" onClick={resetAttachmentFilters}>
+                清空筛选
+              </button>
+              <button type="button" className="icon-button primary" onClick={applyAttachmentFilters}>
+                <ListFilter size={15} />
+                应用筛选
+              </button>
+            </div>
+          </div>
+        </SettingsModal>
+      )}
 
       {error && <div className="notice">{error}</div>}
       {loading ? (
@@ -8203,42 +8413,14 @@ function AttachmentCenterCard({ item, onOpenSource, addToast, onChanged, selecte
           <ExternalLink size={14} />
           <span>{item.sourceTitle || item.taskTitle || '打开来源'}</span>
         </button>
-        <div className="attachment-note-box">
-          {editingNote ? (
-            <>
-              <textarea
-                value={noteDraft}
-                onChange={(event) => setNoteDraft(event.target.value)}
-                placeholder="写一点附件备注..."
-                rows={3}
-              />
-              <div>
-                <button className="primary-button" type="button" onClick={saveNote} disabled={savingNote}>
-                  <Save size={13} />
-                  {savingNote ? '保存中...' : '保存备注'}
-                </button>
-                <button
-                  className="ghost-button"
-                  type="button"
-                  onClick={() => {
-                    setNoteDraft(attachment.note || '');
-                    setEditingNote(false);
-                  }}
-                  disabled={savingNote}
-                >
-                  取消
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className={attachment.note ? '' : 'muted'}>{attachment.note || '暂无备注'}</p>
-              <button className="round-button small" type="button" onClick={() => setEditingNote(true)} title="编辑备注">
-                <Edit3 size={13} />
-              </button>
-            </>
-          )}
-        </div>
+        <button
+          className={attachment.note ? 'attachment-note-button' : 'attachment-note-button muted'}
+          type="button"
+          onClick={() => setEditingNote(true)}
+        >
+          <Edit3 size={13} />
+          <span>{attachment.note || '添加备注'}</span>
+        </button>
         <AttachmentTextStatus
           attachment={attachment}
           kind={item.kind}
@@ -8271,6 +8453,42 @@ function AttachmentCenterCard({ item, onOpenSource, addToast, onChanged, selecte
           <Download size={13} />
         </a>
       </div>
+      {editingNote && (
+        <SettingsModal
+          title="编辑附件备注"
+          description={attachment.originalName || '附件备注'}
+          onClose={() => {
+            setNoteDraft(attachment.note || '');
+            setEditingNote(false);
+          }}
+        >
+          <div className="attachment-note-modal">
+            <textarea
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              placeholder="写一点附件备注..."
+              rows={5}
+            />
+            <div className="settings-form-actions">
+              <button
+                className="ghost-button"
+                type="button"
+                onClick={() => {
+                  setNoteDraft(attachment.note || '');
+                  setEditingNote(false);
+                }}
+                disabled={savingNote}
+              >
+                取消
+              </button>
+              <button className="icon-button primary" type="button" onClick={saveNote} disabled={savingNote}>
+                <Save size={13} />
+                {savingNote ? '保存中...' : '保存备注'}
+              </button>
+            </div>
+          </div>
+        </SettingsModal>
+      )}
     </article>
   );
 }
@@ -8331,6 +8549,7 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
     const ok = await askConfirm(
       '确认彻底删除',
       `确定要彻底删除“${item.title}”吗？这会清理数据库记录和相关附件文件，无法从回收站恢复。`,
+      { confirmText: '彻底删除', tone: 'danger' },
     );
     if (!ok) return;
     const key = `delete-${item.type}-${item.kind || 'item'}-${item.id}`;
@@ -8464,7 +8683,7 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
 }
 
 // Custom confirmation dialog component
-function ConfirmModal({ title, message, confirmText = '确认删除', tone = 'danger', onConfirm, onCancel }) {
+function ConfirmModal({ title, message, confirmText = '确认', tone = 'primary', onConfirm, onCancel }) {
   const isDanger = tone === 'danger';
   const IconComponent = isDanger ? AlertTriangle : RefreshCw;
 
