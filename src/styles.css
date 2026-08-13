@@ -5253,9 +5253,17 @@ textarea {
   width: 48px;
   height: 48px;
   border-radius: 50%;
+  margin-bottom: 16px;
+}
+
+.confirm-icon.danger {
   background: var(--high-bg);
   color: var(--high);
-  margin-bottom: 16px;
+}
+
+.confirm-icon.primary {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
 }
 
 .confirm-modal h3 {
@@ -5277,6 +5285,19 @@ textarea {
   display: flex;
   gap: 12px;
   justify-content: center;
+}
+
+.confirm-button-danger.icon-button.primary {
+  border-color: var(--high);
+  background: var(--high);
+  color: var(--text-inverse);
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.32);
+}
+
+.confirm-button-danger.icon-button.primary:hover {
+  border-color: var(--high);
+  background: var(--high);
+  box-shadow: 0 6px 18px rgba(239, 68, 68, 0.42);
 }
 
 /* Report Panel & Layout Customizations */

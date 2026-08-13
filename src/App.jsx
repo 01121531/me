@@ -906,9 +906,9 @@ function TaskBoardApp() {
   };
 
   // Custom Confirm Promise Helper
-  const askConfirm = (title, message) => {
+  const askConfirm = (title, message, options = {}) => {
     return new Promise((resolve) => {
-      setConfirmState({ title, message, resolve });
+      setConfirmState({ title, message, ...options, resolve });
     });
   };
 
@@ -1511,6 +1511,8 @@ function TaskBoardApp() {
         <ConfirmModal
           title={confirmState.title}
           message={confirmState.message}
+          confirmText={confirmState.confirmText}
+          tone={confirmState.tone}
           onConfirm={() => {
             confirmState.resolve(true);
             setConfirmState(null);
@@ -7195,7 +7197,8 @@ function SettingsView({ addToast, askConfirm }) {
     const confirmed = askConfirm
       ? await askConfirm(
           '确认在线更新',
-          '系统会从 GitHub 拉取 main 分支、安装依赖并重新构建。服务器环境下完成后会尝试重启 PM2 服务。',
+          '系统会从 GitHub 拉取 main 分支、安装依赖并重新构建。不会删除数据库、附件或服务器 .env 配置；完成后会尝试重启 PM2 服务。',
+          { confirmText: '确认更新', tone: 'primary' },
         )
       : window.confirm('确认从 GitHub 在线更新吗？');
     if (!confirmed) return;
@@ -8461,12 +8464,15 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
 }
 
 // Custom confirmation dialog component
-function ConfirmModal({ title, message, onConfirm, onCancel }) {
+function ConfirmModal({ title, message, confirmText = '确认删除', tone = 'danger', onConfirm, onCancel }) {
+  const isDanger = tone === 'danger';
+  const IconComponent = isDanger ? AlertTriangle : RefreshCw;
+
   return (
     <div className="confirm-backdrop">
       <div className="confirm-modal">
-        <div className="confirm-icon">
-          <AlertTriangle size={24} />
+        <div className={`confirm-icon ${isDanger ? 'danger' : 'primary'}`}>
+          <IconComponent size={24} />
         </div>
         <h3>{title}</h3>
         <p>{message}</p>
@@ -8474,8 +8480,8 @@ function ConfirmModal({ title, message, onConfirm, onCancel }) {
           <button className="ghost-button" onClick={onCancel}>
             取消
           </button>
-          <button className="icon-button primary danger-button" onClick={onConfirm} style={{ background: 'var(--high)', borderColor: 'var(--high)', color: '#fff' }}>
-            确认删除
+          <button className={`icon-button primary ${isDanger ? 'confirm-button-danger' : ''}`} onClick={onConfirm}>
+            {confirmText}
           </button>
         </div>
       </div>
