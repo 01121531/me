@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   /* Font Stack */
   --font-primary: 'Inter', "Microsoft YaHei", "PingFang SC", "Segoe UI", system-ui, sans-serif;
   --font-display: 'Outfit', var(--font-primary);
@@ -4935,13 +4935,13 @@ textarea {
 .sidebar-note-card, .note-item, .note-card-drag-overlay {
   --category-hue: 220; /* Default blue-ish */
 }
-.sidebar-note-card[data-category="鎯虫硶"], .note-item[data-category="鎯虫硶"], .note-card-drag-overlay[data-category="鎯虫硶"] { --category-hue: 260; }
-.sidebar-note-card[data-category="闂"], .note-item[data-category="闂"], .note-card-drag-overlay[data-category="闂"] { --category-hue: 35; }
-.sidebar-note-card[data-category="浼氳绾"], .note-item[data-category="浼氳绾"], .note-card-drag-overlay[data-category="浼氳绾"] { --category-hue: 145; }
-.sidebar-note-card[data-category="椋庨櫓"], .note-item[data-category="椋庨櫓"], .note-card-drag-overlay[data-category="椋庨櫓"] { --category-hue: 0; }
-.sidebar-note-card[data-category="寰呯‘璁?], .note-item[data-category="寰呯‘璁?], .note-card-drag-overlay[data-category="寰呯‘璁?] { --category-hue: 200; }
-.sidebar-note-card[data-category="璧勬枡"], .note-item[data-category="璧勬枡"], .note-card-drag-overlay[data-category="璧勬枡"] { --category-hue: 215; }
-.sidebar-note-card[data-category="澶嶇洏"], .note-item[data-category="澶嶇洏"], .note-card-drag-overlay[data-category="澶嶇洏"] { --category-hue: 168; }
+.sidebar-note-card[data-category="想法"], .note-item[data-category="想法"], .note-card-drag-overlay[data-category="想法"] { --category-hue: 260; }
+.sidebar-note-card[data-category="问题"], .note-item[data-category="问题"], .note-card-drag-overlay[data-category="问题"] { --category-hue: 35; }
+.sidebar-note-card[data-category="会议纪要"], .note-item[data-category="会议纪要"], .note-card-drag-overlay[data-category="会议纪要"] { --category-hue: 145; }
+.sidebar-note-card[data-category="风险"], .note-item[data-category="风险"], .note-card-drag-overlay[data-category="风险"] { --category-hue: 0; }
+.sidebar-note-card[data-category="待确认"], .note-item[data-category="待确认"], .note-card-drag-overlay[data-category="待确认"] { --category-hue: 200; }
+.sidebar-note-card[data-category="资料"], .note-item[data-category="资料"], .note-card-drag-overlay[data-category="资料"] { --category-hue: 215; }
+.sidebar-note-card[data-category="复盘"], .note-item[data-category="复盘"], .note-card-drag-overlay[data-category="复盘"] { --category-hue: 168; }
 
 .sidebar-note-card, .note-item, .note-card-drag-overlay {
   --category-color: hsl(var(--category-hue), 70%, 45%);
@@ -5542,6 +5542,237 @@ textarea {
   color: var(--text-primary);
   font-size: 13px;
   overflow-wrap: anywhere;
+}
+
+.settings-page {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-hero,
+.settings-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px;
+}
+
+.settings-hero span,
+.settings-card-head span:first-child {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settings-hero h2,
+.settings-card-head h3 {
+  margin: 4px 0 6px;
+  color: var(--text-primary);
+}
+
+.settings-hero h2 {
+  font-size: 22px;
+}
+
+.settings-card-head h3 {
+  font-size: 17px;
+}
+
+.settings-hero p {
+  max-width: 680px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+  gap: 16px;
+}
+
+.settings-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.settings-card-wide {
+  grid-row: span 2;
+}
+
+.settings-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-status-pill {
+  flex: 0 0 auto;
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  padding: 5px 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settings-status-pill.ok {
+  border-color: color-mix(in srgb, var(--done-color) 34%, var(--border-color));
+  background: color-mix(in srgb, var(--done-bg) 62%, var(--bg-panel));
+  color: var(--done-color);
+}
+
+.settings-status-pill.warning,
+.settings-status-pill.running {
+  border-color: color-mix(in srgb, var(--medium) 34%, var(--border-color));
+  background: color-mix(in srgb, var(--medium-light) 64%, var(--bg-panel));
+  color: var(--medium);
+}
+
+.settings-status-pill.error {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border-color));
+  background: color-mix(in srgb, var(--danger-light) 64%, var(--bg-panel));
+  color: var(--danger);
+}
+
+.settings-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-stack-form {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-form-grid label,
+.settings-stack-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-form-grid label > span,
+.settings-stack-form label > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.settings-form-grid input,
+.settings-stack-form input {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  padding: 0 12px;
+  font: inherit;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.settings-form-grid input:focus,
+.settings-stack-form input:focus {
+  border-color: color-mix(in srgb, var(--primary) 62%, var(--border-color));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+.settings-form-grid em {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.4;
+}
+
+.settings-toggle {
+  align-content: center;
+  grid-template-columns: 18px 1fr;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-input) 58%, transparent);
+  padding: 10px 12px;
+}
+
+.settings-toggle input {
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+}
+
+.settings-form-actions,
+.settings-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.settings-form-actions {
+  grid-column: 1 / -1;
+}
+
+.settings-form-actions .ghost-button,
+.settings-form-actions .icon-button,
+.settings-inline-actions .ghost-button,
+.settings-inline-actions .icon-button {
+  width: auto;
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.settings-help-text,
+.settings-error-text {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-help-text {
+  color: var(--text-muted);
+}
+
+.settings-error-text {
+  color: var(--danger);
+  font-weight: 800;
+}
+
+.settings-update-log {
+  display: grid;
+  gap: 4px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-input) 72%, transparent);
+  padding: 10px;
+}
+
+.settings-update-log code,
+.settings-update-log span {
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.settings-maintenance .system-page {
+  margin-top: 0;
 }
 
 .report-grid {
@@ -7503,6 +7734,32 @@ textarea {
 }
 
 @media (max-width: 860px) {
+  .settings-hero {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .settings-grid,
+  .settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-card-wide {
+    grid-row: auto;
+  }
+
+  .settings-form-actions,
+  .settings-inline-actions {
+    justify-content: stretch;
+  }
+
+  .settings-form-actions .ghost-button,
+  .settings-form-actions .icon-button,
+  .settings-inline-actions .ghost-button,
+  .settings-inline-actions .icon-button {
+    flex: 1 1 180px;
+  }
+
   .note-ai-format-drawer,
   .note-version-drawer {
     width: 100vw;
@@ -7570,6 +7827,18 @@ textarea {
 }
 
 @media (max-width: 480px) {
+  .settings-card-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .settings-form-actions .ghost-button,
+  .settings-form-actions .icon-button,
+  .settings-inline-actions .ghost-button,
+  .settings-inline-actions .icon-button {
+    width: 100%;
+  }
+
   .ai-shell,
   .ai-shell.compact {
     min-height: calc(100vh - 118px);

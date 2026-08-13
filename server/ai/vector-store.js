@@ -9,6 +9,9 @@ let qdrantClient;
 let embeddingModel;
 let vectorStore;
 let collectionReady = false;
+let qdrantSignature = '';
+let embeddingSignature = '';
+let vectorStoreSignature = '';
 
 function pointId(documentId) {
   const hex = crypto.createHash('sha256').update(documentId).digest('hex').slice(0, 32);
@@ -28,18 +31,28 @@ export function assertAiIndexingConfiguration() {
 }
 
 function getQdrantClient() {
-  if (!qdrantClient) {
+  const nextSignature = [config.ai.qdrant.url, config.ai.qdrant.apiKey].join('\n');
+  if (!qdrantClient || qdrantSignature !== nextSignature) {
     qdrantClient = new QdrantClient({
       url: config.ai.qdrant.url,
       apiKey: config.ai.qdrant.apiKey || undefined,
       timeout: 30000,
     });
+    qdrantSignature = nextSignature;
+    vectorStore = null;
+    vectorStoreSignature = '';
+    collectionReady = false;
   }
   return qdrantClient;
 }
 
 export function getEmbeddingModel() {
-  if (!embeddingModel) {
+  const nextSignature = [
+    config.ai.litellm.baseUrl,
+    config.ai.litellm.apiKey,
+    config.ai.litellm.embeddingModel,
+  ].join('\n');
+  if (!embeddingModel || embeddingSignature !== nextSignature) {
     embeddingModel = new OpenAIEmbedding({
       model: config.ai.litellm.embeddingModel,
       apiKey: config.ai.litellm.apiKey,
@@ -47,17 +60,29 @@ export function getEmbeddingModel() {
       maxRetries: 2,
       timeout: 30000,
     });
+    embeddingSignature = nextSignature;
+    vectorStore = null;
+    vectorStoreSignature = '';
   }
   return embeddingModel;
 }
 
 export function getVectorStore() {
-  if (!vectorStore) {
+  const client = getQdrantClient();
+  const embedModel = getEmbeddingModel();
+  const nextSignature = [
+    config.ai.qdrant.collection,
+    qdrantSignature,
+    embeddingSignature,
+  ].join('\n');
+  if (!vectorStore || vectorStoreSignature !== nextSignature) {
     vectorStore = new QdrantVectorStore({
       collectionName: config.ai.qdrant.collection,
-      client: getQdrantClient(),
-      embedModel: getEmbeddingModel(),
+      client,
+      embedModel,
     });
+    vectorStoreSignature = nextSignature;
+    collectionReady = false;
   }
   return vectorStore;
 }

@@ -5,6 +5,7 @@ import { toNullableText } from '../validators.js';
 import { retrieveRelevantNodes } from './vector-store.js';
 
 let chatModel;
+let chatModelSignature = '';
 
 const workspaceAssistantPrompt = [
   '你是个人助理任务台的工作助手。',
@@ -86,7 +87,12 @@ function getChatModel() {
   if (!config.ai.litellm.baseUrl || !config.ai.litellm.apiKey || !config.ai.litellm.chatModel) {
     throw new Error('LiteLLM requires LITELLM_BASE_URL, LITELLM_API_KEY, and LITELLM_CHAT_MODEL.');
   }
-  if (!chatModel) {
+  const nextSignature = [
+    config.ai.litellm.baseUrl,
+    config.ai.litellm.apiKey,
+    config.ai.litellm.chatModel,
+  ].join('\n');
+  if (!chatModel || chatModelSignature !== nextSignature) {
     chatModel = new OpenAI({
       model: config.ai.litellm.chatModel,
       apiKey: config.ai.litellm.apiKey,
@@ -95,6 +101,7 @@ function getChatModel() {
       maxRetries: 1,
       timeout: 45000,
     });
+    chatModelSignature = nextSignature;
   }
   return chatModel;
 }

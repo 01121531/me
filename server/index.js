@@ -46,6 +46,14 @@ import {
   verifyBackup,
 } from './scripts/backup.js';
 import {
+  changeAccessPassword,
+  getOnlineUpdateStatus,
+  getSettingsSnapshot,
+  saveAiSettings,
+  startOnlineUpdate,
+  testAiConnection,
+} from './settings.js';
+import {
   createExcelExport,
   createMarkdownExport,
   createPdfExport,
@@ -1020,6 +1028,30 @@ app.get('/api/health', asyncRoute(async (_req, res) => {
 
 app.get('/api/system/checks', asyncRoute(async (_req, res) => {
   res.json(await runSystemChecks(getPool()));
+}));
+
+app.get('/api/settings', asyncRoute(async (_req, res) => {
+  res.json(getSettingsSnapshot());
+}));
+
+app.patch('/api/settings/ai', asyncRoute(async (req, res) => {
+  res.json({ ai: await saveAiSettings(req.body || {}) });
+}));
+
+app.post('/api/settings/ai/test', asyncRoute(async (req, res) => {
+  res.json(await testAiConnection(req.body || {}));
+}));
+
+app.patch('/api/settings/password', asyncRoute(async (req, res) => {
+  res.json(await changeAccessPassword(req.body || {}));
+}));
+
+app.get('/api/settings/update', asyncRoute(async (_req, res) => {
+  res.json(getOnlineUpdateStatus());
+}));
+
+app.post('/api/settings/update', asyncRoute(async (req, res) => {
+  res.status(202).json(startOnlineUpdate(req.body || {}));
 }));
 
 app.get('/api/backups', asyncRoute(async (req, res) => {
@@ -3281,6 +3313,11 @@ app.use((err, _req, res, next) => {
 });
 
 app.use((err, _req, res, _next) => {
+  const statusCode = Number(err?.statusCode || err?.status || 0);
+  if (statusCode >= 400 && statusCode < 600) {
+    res.status(statusCode).json({ message: err.message || '请求处理失败。' });
+    return;
+  }
   console.error(err);
   res.status(500).json({ message: '服务器处理失败，请查看终端日志。' });
 });

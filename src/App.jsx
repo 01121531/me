@@ -1,4 +1,4 @@
-﻿import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useMemo, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 import { Node, mergeAttributes } from '@tiptap/core';
 import Image from '@tiptap/extension-image';
@@ -58,6 +58,7 @@ import {
   RotateCcw,
   Save,
   Search,
+  Settings,
   ShieldCheck,
   Sparkles,
   Sun,
@@ -67,21 +68,21 @@ import {
 import { api } from './api.js';
 
 const columns = [
-  { status: 'todo', title: '寰呭姙', icon: ClipboardList },
-  { status: 'in_progress', title: '杩涜涓?, icon: Clock3 },
-  { status: 'done', title: '宸插畬鎴?, icon: Check },
+  { status: 'todo', title: '待办', icon: ClipboardList },
+  { status: 'in_progress', title: '进行中', icon: Clock3 },
+  { status: 'done', title: '已完成', icon: Check },
 ];
 
 const priorityLabels = {
-  low: '浣?,
-  medium: '涓?,
-  high: '楂?,
+  low: '低',
+  medium: '中',
+  high: '高',
 };
 
 const statusLabels = {
-  todo: '寰呭姙',
-  in_progress: '杩涜涓?,
-  done: '宸插畬鎴?,
+  todo: '待办',
+  in_progress: '进行中',
+  done: '已完成',
 };
 
 const columnStatuses = columns.map((column) => column.status);
@@ -128,102 +129,102 @@ const emptyRichDoc = {
 const noteTemplates = [
   {
     id: 'account',
-    label: '璐﹀彿璁板綍',
-    title: '璐﹀彿璁板綍',
-    category: '璐﹀彿',
-    content: '璐﹀彿鍚嶇О锛歕n骞冲彴/鐢ㄩ€旓細\n鐧诲綍鏂瑰紡锛歕n鍏抽敭缃戝潃锛歕n缁戝畾淇℃伅锛歕n褰撳墠鐘舵€侊細\n娉ㄦ剰浜嬮」锛歕n涓嬩竴姝ワ細',
+    label: '账号记录',
+    title: '账号记录',
+    category: '账号',
+    content: '账号名称：\n平台/用途：\n登录方式：\n关键网址：\n绑定信息：\n当前状态：\n注意事项：\n下一步：',
   },
   {
     id: 'contract',
-    label: '鍚堝悓璁板綍',
-    title: '鍚堝悓璁板綍',
-    category: '鍚堝悓',
-    content: '鍚堝悓鍚嶇О锛歕n鍚堜綔鏂癸細\n璐熻矗浜猴細\n褰撳墠闃舵锛歕n鍏抽敭鏃ユ湡锛歕n寰呯‘璁や簨椤癸細\n闄勪欢璇存槑锛歕n涓嬩竴姝ワ細',
+    label: '合同记录',
+    title: '合同记录',
+    category: '合同',
+    content: '合同名称：\n合作方：\n负责人：\n当前阶段：\n关键日期：\n待确认事项：\n附件说明：\n下一步：',
   },
   {
     id: 'customer',
-    label: '瀹㈡埛娌熼€?,
-    title: '瀹㈡埛娌熼€氳褰?,
-    category: '瀹㈡埛',
-    content: '瀹㈡埛/鑱旂郴浜猴細\n娌熼€氭椂闂达細\n娌熼€氭笭閬擄細\n鏍稿績璇夋眰锛歕n宸茬‘璁ゅ唴瀹癸細\n寰呭洖澶嶉棶棰橈細\n椋庨櫓/澶囨敞锛歕n涓嬩竴姝ワ細',
+    label: '客户沟通',
+    title: '客户沟通记录',
+    category: '客户',
+    content: '客户/联系人：\n沟通时间：\n沟通渠道：\n核心诉求：\n已确认内容：\n待回复问题：\n风险/备注：\n下一步：',
   },
   {
     id: 'troubleshooting',
-    label: '闂鎺掓煡',
-    title: '闂鎺掓煡璁板綍',
-    category: '闂',
-    content: '闂鐜拌薄锛歕n褰卞搷鑼冨洿锛歕n澶嶇幇姝ラ锛歕n宸插皾璇曟搷浣滐細\n鎺掓煡缁撹锛歕n涓存椂鏂规锛歕n寰呴獙璇佷簨椤癸細\n涓嬩竴姝ワ細',
+    label: '问题排查',
+    title: '问题排查记录',
+    category: '问题',
+    content: '问题现象：\n影响范围：\n复现步骤：\n已尝试操作：\n排查结论：\n临时方案：\n待验证事项：\n下一步：',
   },
   {
     id: 'meeting',
-    label: '浼氳绾',
-    title: '浼氳绾',
-    category: '浼氳绾',
-    content: '浼氳涓婚锛歕n鍙備細浜哄憳锛歕n璁ㄨ瑕佺偣锛歕n宸茬‘瀹氫簨椤癸細\n寰呭姙浜嬮」锛歕n璐熻矗浜猴細\n鎴鏃堕棿锛歕n涓嬩竴娆¤窡杩涳細',
+    label: '会议纪要',
+    title: '会议纪要',
+    category: '会议纪要',
+    content: '会议主题：\n参会人员：\n讨论要点：\n已确定事项：\n待办事项：\n负责人：\n截止时间：\n下一次跟进：',
   },
 ];
 
 const noteFormatPresets = [
   {
     id: 'checklist',
-    label: '鎸夋竻鍗曟暣鐞?,
-    instruction: '鎶婂唴瀹规暣鐞嗘垚娓呮櫚鐨勫緟鍔炴竻鍗曞拰宸茬‘璁や簨椤癸紝淇濈暀鍘熸湁浜嬪疄锛屼笉鏂板淇℃伅銆?,
+    label: '按清单整理',
+    instruction: '把内容整理成清晰的待办清单和已确认事项，保留原有事实，不新增信息。',
   },
   {
     id: 'grouped',
-    label: '鎸夊垎缁勬暣鐞?,
-    instruction: '鎸変富棰樻垨瀵硅薄鍒嗙粍鏁寸悊锛岀粰姣忕粍鍔犵畝鐭皬鏍囬锛岄噸澶嶅唴瀹瑰悎骞讹紝涓嶆柊澧炰簨瀹炪€?,
+    label: '按分组整理',
+    instruction: '按主题或对象分组整理，给每组加简短小标题，重复内容合并，不新增事实。',
   },
   {
     id: 'todos',
-    label: '鎻愬彇寰呭姙',
-    instruction: '閲嶇偣鎻愬彇寰呭姙浜嬮」銆佽礋璐ｄ汉銆佹埅姝㈡椂闂村拰涓嬩竴姝ワ紝鏃犳硶纭鐨勫瓧娈垫爣娉ㄤ负寰呯‘璁ゃ€?,
+    label: '提取待办',
+    instruction: '重点提取待办事项、负责人、截止时间和下一步，无法确认的字段标注为待确认。',
   },
   {
     id: 'key-info',
-    label: '鎻愬彇鍏抽敭淇℃伅',
-    instruction: '鎻愬彇璐﹀彿銆侀摼鎺ャ€侀噾棰濄€佹椂闂淬€佽仈绯讳汉銆佺姸鎬佺瓑鍏抽敭瀛楁锛岄€傚悎鏃舵暣鐞嗘垚琛ㄦ牸銆?,
+    label: '提取关键信息',
+    instruction: '提取账号、链接、金额、时间、联系人、状态等关键字段，适合时整理成表格。',
   },
 ];
 
 const logTemplates = [
   {
     id: 'follow-up',
-    label: '鏃ュ父璺熻繘',
-    content: '宸茶窡杩涘綋鍓嶄换鍔★紝纭浜嗘渶鏂拌繘灞曚笌闃诲鐐广€?,
-    nextStep: '缁х画鎺ㄨ繘涓嬩竴姝ワ紝骞跺悓姝ュ叧閿粨鏋溿€?,
+    label: '日常跟进',
+    content: '已跟进当前任务，确认了最新进展与阻塞点。',
+    nextStep: '继续推进下一步，并同步关键结果。',
     hours: '0.5',
     detailsOpen: false,
   },
   {
     id: 'communication',
-    label: '娌熼€氳褰?,
-    content: '宸插畬鎴愮浉鍏虫矡閫氾紝璁板綍瀵规柟鍙嶉銆佺‘璁や簨椤瑰拰寰呭洖澶嶉棶棰樸€?,
-    nextStep: '鏁寸悊娌熼€氱粨璁猴紝骞惰窡杩涙湭纭浜嬮」銆?,
+    label: '沟通记录',
+    content: '已完成相关沟通，记录对方反馈、确认事项和待回复问题。',
+    nextStep: '整理沟通结论，并跟进未确认事项。',
     hours: '0.5',
     detailsOpen: true,
   },
   {
     id: 'file-work',
-    label: '鏂囦欢鏁寸悊',
-    content: '宸叉暣鐞嗘湰闃舵鏂囦欢鎴栧浘鐗囪祫鏂欙紝骞惰ˉ鍏呴檮浠惰鏄庛€?,
-    nextStep: '妫€鏌ヨ祫鏂欐槸鍚﹀畬鏁达紝蹇呰鏃剁户缁ˉ鍏呮垨鎻愪氦瀹℃牳銆?,
+    label: '文件整理',
+    content: '已整理本阶段文件或图片资料，并补充附件说明。',
+    nextStep: '检查资料是否完整，必要时继续补充或提交审核。',
     hours: '1',
     detailsOpen: true,
   },
   {
     id: 'issue',
-    label: '闂澶勭悊',
-    content: '宸插畾浣嶅苟澶勭悊褰撳墠闂锛岃褰曠幇璞°€佸師鍥犲拰澶勭悊缁撴灉銆?,
-    nextStep: '缁х画瑙傚療缁撴灉锛岀‘璁ら棶棰樻槸鍚﹀鐜般€?,
+    label: '问题处理',
+    content: '已定位并处理当前问题，记录现象、原因和处理结果。',
+    nextStep: '继续观察结果，确认问题是否复现。',
     hours: '1',
     detailsOpen: true,
   },
   {
     id: 'summary',
-    label: '闃舵鎬荤粨',
-    content: '鏈樁娈靛凡瀹屾垚涓昏浜嬮」锛屾暣鐞嗕簡褰撳墠鎴愭灉銆佸墿浣欓棶棰樺拰涓嬩竴姝ヨ鍒掋€?,
-    nextStep: '鎸夎鍒掕繘鍏ヤ笅涓€闃舵澶勭悊銆?,
+    label: '阶段总结',
+    content: '本阶段已完成主要事项，整理了当前成果、剩余问题和下一步计划。',
+    nextStep: '按计划进入下一阶段处理。',
     hours: '1',
     detailsOpen: true,
   },
@@ -293,7 +294,8 @@ function saveCustomLogTemplates(templates) {
   try {
     localStorage.setItem(customLogTemplatesStorageKey, JSON.stringify(templates));
   } catch {
-    // 鑷畾涔夋ā鏉垮彧鏄緟鍔╁綍鍏ワ紝淇濆瓨澶辫触涓嶅奖鍝嶆寮忔棩蹇椼€?  }
+    // 自定义模板只是辅助录入，保存失败不影响正式日志。
+  }
 }
 
 const FileAttachmentNode = Node.create({
@@ -327,7 +329,7 @@ const FileAttachmentNode = Node.create({
       'data-pending': HTMLAttributes.tempId ? 'true' : 'false',
       class: `${HTMLAttributes.isImage ? 'rich-attachment-node image' : 'rich-attachment-node'}${HTMLAttributes.tempId ? ' pending' : ''}`,
     };
-    const name = HTMLAttributes.name || '闄勪欢';
+    const name = HTMLAttributes.name || '附件';
     const size = formatFileSize(Number(HTMLAttributes.size || 0));
 
     if (HTMLAttributes.isImage && HTMLAttributes.previewUrl) {
@@ -335,7 +337,7 @@ const FileAttachmentNode = Node.create({
         'figure',
         mergeAttributes(attrs),
         ['img', { src: HTMLAttributes.previewUrl, alt: name }],
-        ['figcaption', {}, HTMLAttributes.tempId ? `${name} 路 寰呬繚瀛樹笂浼燻 : name],
+        ['figcaption', {}, HTMLAttributes.tempId ? `${name} · 待保存上传` : name],
       ];
     }
 
@@ -345,7 +347,7 @@ const FileAttachmentNode = Node.create({
       ['span', { class: 'rich-attachment-icon' }, 'FILE'],
       ['span', { class: 'rich-attachment-name' }, name],
       ['span', { class: 'rich-attachment-size' }, size],
-      ...(HTMLAttributes.tempId ? [['span', { class: 'rich-attachment-pending' }, '寰呬繚瀛?]] : []),
+      ...(HTMLAttributes.tempId ? [['span', { class: 'rich-attachment-pending' }, '待保存']] : []),
     ];
   },
 });
@@ -386,7 +388,7 @@ function formatChinaDateParts({ year, month, day }) {
 }
 
 function formatDate(value) {
-  if (!value) return '鏈缃?;
+  if (!value) return '未设置';
   return value.slice(0, 10);
 }
 
@@ -407,25 +409,25 @@ function compactAttachmentTextError(error = '') {
     // Some providers return plain text; keep it and normalize below.
   }
   if (/No endpoints found that support image input/i.test(message)) {
-    return '褰撳墠 OCR 妯″瀷涓嶆敮鎸佸浘鐗囪緭鍏?;
+    return '当前 OCR 模型不支持图片输入';
   }
-  if (/timeout|timed out/i.test(message)) return '璇嗗埆瓒呮椂锛岃绋嶅悗閲嶈瘯';
-  if (/rate limit|quota/i.test(message)) return '妯″瀷棰濆害鎴栭鐜囧彈闄?;
+  if (/timeout|timed out/i.test(message)) return '识别超时，请稍后重试';
+  if (/rate limit|quota/i.test(message)) return '模型额度或频率受限';
   return message.length > 36 ? `${message.slice(0, 36)}...` : message;
 }
 
 function attachmentTextStatusLabel(attachment) {
   const chars = Number(attachment.textChars || 0);
   if (attachment.textStatus === 'completed') {
-    return `宸茶瘑鍒?{chars ? ` 路 ${chars} 瀛梎 : ''}${attachment.textTruncated ? ' 路 宸叉埅鏂? : ''}`;
+    return `已识别${chars ? ` · ${chars} 字` : ''}${attachment.textTruncated ? ' · 已截断' : ''}`;
   }
-  if (attachment.textStatus === 'processing' || attachment.textStatus === 'pending') return '璇嗗埆涓?;
+  if (attachment.textStatus === 'processing' || attachment.textStatus === 'pending') return '识别中';
   if (attachment.textStatus === 'failed') {
     const reason = compactAttachmentTextError(attachment.textError);
-    return `璇嗗埆澶辫触${reason ? `锛?{reason}` : ''}`;
+    return `识别失败${reason ? `：${reason}` : ''}`;
   }
-  if (attachment.textStatus === 'unsupported') return '鏆備笉鏀寔璇嗗埆';
-  return '鏈瘑鍒?;
+  if (attachment.textStatus === 'unsupported') return '暂不支持识别';
+  return '未识别';
 }
 
 function canReextractAttachment(attachment) {
@@ -650,8 +652,8 @@ function inferNextStepFromLogContent(content) {
     .map((line) => line.trim())
     .filter(Boolean);
   const patterns = [
-    /^(?:涓嬩竴姝涓嬫|鍚庣画|寰呭姙|todo|TODO|璁″垝|闇€瑕佽窡杩泑缁х画璺熻繘)\s*[锛?锛?銆?]?\s*(.+)$/i,
-    /^(?:闇€瑕亅鍑嗗|缁х画|鏄庡ぉ|绋嶅悗)\s*(.+)$/i,
+    /^(?:下一步|下步|后续|待办|todo|TODO|计划|需要跟进|继续跟进)\s*[：:，,、-]?\s*(.+)$/i,
+    /^(?:需要|准备|继续|明天|稍后)\s*(.+)$/i,
   ];
   for (const line of lines) {
     for (const pattern of patterns) {
@@ -922,7 +924,7 @@ function TaskBoardApp() {
       }
     } catch (err) {
       setError(err.message);
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
     } finally {
       setLoading(false);
     }
@@ -934,7 +936,7 @@ function TaskBoardApp() {
       const data = await api.getStandaloneNotes({ search: searchVal, includeLinked: includeLinked ? '1' : '' });
       setStandaloneNotes(data);
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
     } finally {
       setStandaloneNotesLoading(false);
     }
@@ -957,7 +959,7 @@ function TaskBoardApp() {
       const data = await api.getNoteCategories();
       setAvailableNoteCategories(mergeNoteCategories(data));
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
     }
   }
 
@@ -967,7 +969,7 @@ function TaskBoardApp() {
       const data = await api.getActionRequests({ status: 'pending' });
       setActionRequests(data);
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
     } finally {
       setActionRequestsLoading(false);
     }
@@ -1045,18 +1047,18 @@ function TaskBoardApp() {
 
   function openCreateTaskFromLog(task, log) {
     if (!log.nextStep) {
-      addToast('info', '鎻愮ず', '杩欐潯鏃ュ織娌℃湁涓嬩竴姝ヨ鍒掋€?);
+      addToast('info', '提示', '这条日志没有下一步计划。');
       return;
     }
     const title = String(log.nextStep || '').trim().slice(0, 160);
     const description = [
-      `鏉ユ簮浠诲姟锛?{task.title}`,
-      `鏉ユ簮鏃ュ織鏃ユ湡锛?{log.logDate}`,
+      `来源任务：${task.title}`,
+      `来源日志日期：${log.logDate}`,
       '',
-      '鍘熸棩蹇楀唴瀹癸細',
+      '原日志内容：',
       log.content || '',
       '',
-      '涓嬩竴姝ヨ鍒掞細',
+      '下一步计划：',
       log.nextStep || '',
     ].join('\n');
     openCreateTask('todo', {
@@ -1068,7 +1070,7 @@ function TaskBoardApp() {
       status: 'todo',
       tags: Array.isArray(task.tags) ? task.tags.join(',') : '',
     });
-    addToast('info', '宸茬敓鎴愪换鍔¤崏绋?, '璇风‘璁ゅ唴瀹瑰悗淇濆瓨銆?);
+    addToast('info', '已生成任务草稿', '请确认内容后保存。');
   }
 
   async function saveTask(payload) {
@@ -1079,31 +1081,31 @@ function TaskBoardApp() {
       };
       if (editingTask) {
         await api.updateTask(editingTask.id, nextPayload);
-        addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+        addToast('success', '完成', '操作已完成。');
       } else {
         await api.createTask(nextPayload);
-        addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+        addToast('success', '完成', '操作已完成。');
       }
       setIsTaskModalOpen(false);
       setEditingTask(null);
       setCreateTaskInitialValues(null);
       await loadTasks();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
   async function deleteTask(task) {
-    const ok = await askConfirm('纭鍒犻櫎浠诲姟', `纭畾瑕佸垹闄も€?{task.title}鈥濆悧锛熶换鍔′細杩涘叆鍥炴敹绔欙紝鍙湪鍥炴敹绔欐仮澶嶃€俙);
+    const ok = await askConfirm('确认删除任务', `确定要删除“${task.title}”吗？任务会进入回收站，可在回收站恢复。`);
     if (!ok) return;
     try {
       await api.deleteTask(task.id);
       setSelectedTask(null);
       setTaskDrawerInitialSection('progress');
-      addToast('success', '宸茬Щ鍏ュ洖鏀剁珯', '鍙湪鍥炴敹绔欐仮澶嶈繖椤逛换鍔°€?);
+      addToast('success', '已移入回收站', '可在回收站恢复这项任务。');
       await loadTasks();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
@@ -1160,10 +1162,10 @@ function TaskBoardApp() {
     setTasks(nextTasks);
     try {
       await api.reorderTasks(toOrderPayload(nextTasks));
-      addToast('info', '鎻愮ず', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('info', '提示', '操作已完成。');
       await loadTasks();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
       setTasks(taskBefore);
       await loadTasks();
     }
@@ -1172,10 +1174,10 @@ function TaskBoardApp() {
   async function updateProgress(task, progress) {
     try {
       await api.updateTask(task.id, { progress });
-      addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('success', '完成', '操作已完成。');
       await loadTasks();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
@@ -1194,11 +1196,11 @@ function TaskBoardApp() {
     setTasks(nextTasks);
     try {
       await api.updateTask(task.id, { status, progress: nextProgress });
-      addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('success', '完成', '操作已完成。');
       await loadTasks();
     } catch (err) {
       setTasks(before);
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
       await loadTasks();
     }
   }
@@ -1236,26 +1238,26 @@ function TaskBoardApp() {
     try {
       const updated = await api.approveActionRequest(action.id);
       if (updated.status === 'applied') {
-        addToast('success', '瀹屾垚', updated.title || '鎿嶄綔宸插畬鎴愩€?);
+        addToast('success', '完成', updated.title || '操作已完成。');
       } else {
-        addToast('error', '鍑洪敊浜?, updated.errorMessage || '鎿嶄綔澶辫触銆?);
+        addToast('error', '出错了', updated.errorMessage || '操作失败。');
       }
       await loadActionRequests();
       await loadTasks();
       await loadStandaloneNotes();
       await loadNoteCategories();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
   async function rejectAction(action) {
     try {
       await api.rejectActionRequest(action.id);
-      addToast('info', '宸叉嫆缁?, action.title || '璇ュ姩浣滆姹傚凡鎷掔粷銆?);
+      addToast('info', '已拒绝', action.title || '该动作请求已拒绝。');
       await loadActionRequests();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
@@ -1263,57 +1265,57 @@ function TaskBoardApp() {
     <div className="app-shell">
       <header className="topbar">
         <div>
-          <p className="eyebrow">涓汉宸ヤ綔璁板綍</p>
-          <h1>鍔╃悊浠诲姟鍙?/h1>
+          <p className="eyebrow">个人工作记录</p>
+          <h1>助理任务台</h1>
         </div>
         <div className="top-actions">
           <button
             className="theme-toggle-btn"
             onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
-            title={theme === 'light' ? '鍒囨崲鍒版繁鑹叉ā寮? : '鍒囨崲鍒版祬鑹叉ā寮?}
-            aria-label="鍒囨崲涓婚"
+            title={theme === 'light' ? '切换到深色模式' : '切换到浅色模式'}
+            aria-label="切换主题"
           >
             {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
           </button>
           <button
             className={view === 'today' ? 'icon-button active' : 'icon-button'}
             onClick={() => setView('today')}
-            title="浠婃棩宸ヤ綔鍙?
+            title="今日工作台"
           >
             <Clock3 size={18} />
-            <span>浠婃棩</span>
+            <span>今日</span>
           </button>
           <button
             className={view === 'board' ? 'icon-button active' : 'icon-button'}
             onClick={() => setView('board')}
-            title="浠诲姟鐪嬫澘"
+            title="任务看板"
           >
             <LayoutDashboard size={18} />
-            <span>鐪嬫澘</span>
+            <span>看板</span>
           </button>
           <button
             className={view === 'report' ? 'icon-button active' : 'icon-button'}
             onClick={() => setView('report')}
-            title="鏃ユ姤鍛ㄦ姤"
+            title="日报周报"
           >
             <BarChart3 size={18} />
-            <span>姹囨€?/span>
+            <span>汇总</span>
           </button>
           <button
             className={view === 'notes' ? 'icon-button active' : 'icon-button'}
             onClick={() => setView('notes')}
-            title="鐙珛绗旇"
+            title="独立笔记"
           >
             <FileText size={18} />
-            <span>绗旇</span>
+            <span>笔记</span>
           </button>
           <button
             className={view === 'attachments' ? 'icon-button active' : 'icon-button'}
             onClick={() => setView('attachments')}
-            title="闄勪欢涓績"
+            title="附件中心"
           >
             <Paperclip size={18} />
-            <span>闄勪欢</span>
+            <span>附件</span>
           </button>
           <button
             className={view === 'ai' ? 'icon-button ai-search-button active' : 'icon-button ai-search-button'}
@@ -1321,36 +1323,36 @@ function TaskBoardApp() {
             title="AI"
           >
             <Search size={18} />
-            <span>鏅鸿兘妫€绱?/span>
+            <span>智能检索</span>
           </button>
           <button
             className={view === 'trash' ? 'icon-button active' : 'icon-button'}
             onClick={() => setView('trash')}
-            title="鍥炴敹绔?
+            title="回收站"
           >
             <Trash2 size={18} />
-            <span>鍥炴敹绔?/span>
+            <span>回收站</span>
           </button>
           <button
             className={view === 'system' ? 'icon-button active' : 'icon-button'}
             onClick={() => setView('system')}
-            title="绯荤粺涓庡浠?
+            title="设置"
           >
-            <Save size={18} />
-            <span>绯荤粺</span>
+            <Settings size={18} />
+            <span>设置</span>
           </button>
           <button
             className={actionRequests.length ? 'icon-button approval-button has-pending' : 'icon-button approval-button'}
             onClick={() => setIsApprovalsOpen(true)}
-            title="OpenClaw 瀹℃壒"
+            title="OpenClaw 审批"
           >
             <ShieldCheck size={18} />
-            <span>瀹℃壒</span>
+            <span>审批</span>
             {actionRequests.length > 0 && <em>{actionRequests.length}</em>}
           </button>
-          <button className="icon-button primary" onClick={() => openCreateTask('todo')} title="鏂板缓浠诲姟">
+          <button className="icon-button primary" onClick={() => openCreateTask('todo')} title="新建任务">
             <Plus size={18} />
-            <span>鏂板缓</span>
+            <span>新建</span>
           </button>
         </div>
       </header>
@@ -1362,7 +1364,7 @@ function TaskBoardApp() {
             <span>{error}</span>
             <button className="ghost-button" onClick={() => loadTasks()}>
               <RefreshCw size={16} />
-              閲嶈瘯
+              重试
             </button>
           </div>
         )}
@@ -1387,7 +1389,7 @@ function TaskBoardApp() {
               onDragCancel={handleDragCancel}
               onDragEnd={handleDragEnd}
             >
-              <section className="board" aria-label="浠诲姟鐪嬫澘">
+              <section className="board" aria-label="任务看板">
                 {columns.map((column) => (
                   <BoardColumn
                     key={column.status}
@@ -1440,7 +1442,7 @@ function TaskBoardApp() {
             }}
           />
         ) : view === 'system' ? (
-          <SystemView addToast={addToast} />
+          <SettingsView addToast={addToast} askConfirm={askConfirm} />
         ) : (
           <ReportView
             dates={reportDates}
@@ -1543,7 +1545,7 @@ function FilterBar({ filters, onChange, loading, onRefresh }) {
     <div className="filters">
       <div className="filter-title">
         <ListFilter size={17} />
-        <span>绛涢€?/span>
+        <span>筛选</span>
       </div>
       <label>
         <Flag size={16} />
@@ -1553,10 +1555,10 @@ function FilterBar({ filters, onChange, loading, onRefresh }) {
           value={draft.priority}
           onChange={(event) => setDraft({ ...draft, priority: event.target.value })}
         >
-          <option value="">鍏ㄩ儴浼樺厛绾?/option>
-          <option value="high">楂樹紭鍏堢骇</option>
-          <option value="medium">涓紭鍏堢骇</option>
-          <option value="low">浣庝紭鍏堢骇</option>
+          <option value="">全部优先级</option>
+          <option value="high">高优先级</option>
+          <option value="medium">中优先级</option>
+          <option value="low">低优先级</option>
         </select>
       </label>
       <label>
@@ -1566,16 +1568,16 @@ function FilterBar({ filters, onChange, loading, onRefresh }) {
           name="tag"
           value={draft.tag}
           onChange={(event) => setDraft({ ...draft, tag: event.target.value })}
-          placeholder="鎼滅储鏍囩..."
+          placeholder="搜索标签..."
         />
       </label>
       <button className="ghost-button" onClick={() => onChange(draft)}>
         <Search size={16} />
-        搴旂敤
+        应用
       </button>
       <button className="ghost-button" onClick={onRefresh} disabled={loading}>
         <RefreshCw size={16} />
-        鍒锋柊
+        刷新
       </button>
     </div>
   );
@@ -1623,7 +1625,7 @@ function TodayWorkbenchView({
     return map;
   }, [data]);
 
-  const rangeLabel = dates.from === dates.to ? dates.from : `${dates.from} 鑷?${dates.to}`;
+  const rangeLabel = dates.from === dates.to ? dates.from : `${dates.from} 至 ${dates.to}`;
 
   function selectRange(nextMode) {
     setMode(nextMode);
@@ -1647,7 +1649,7 @@ function TodayWorkbenchView({
       data?.activeTasks?.[0] ||
       null;
     if (!task) {
-      addToast('info', '鎻愮ず', '褰撳墠娌℃湁鍙褰曟棩蹇楃殑鏈畬鎴愪换鍔°€?);
+      addToast('info', '提示', '当前没有可记录日志的未完成任务。');
       return;
     }
     onOpenTask(task, 'logs');
@@ -1669,94 +1671,95 @@ function TodayWorkbenchView({
     <section className="today-workbench">
       <div className="today-head">
         <div>
-          <p className="eyebrow">浠婃棩宸ヤ綔鍙?/p>
+          <p className="eyebrow">今日工作台</p>
           <h2>{rangeLabel}</h2>
-          <span>浠诲姟銆佹棩蹇椼€佺瑪璁板拰闄勪欢鐨勫綋鍓嶅鐞嗚鍥?/span>
+          <span>任务、日志、笔记和附件的当前处理视图</span>
         </div>
-        <div className="range-switch" role="group" aria-label="宸ヤ綔鍙版棩鏈熻寖鍥?>
+        <div className="range-switch" role="group" aria-label="工作台日期范围">
           <button type="button" className={mode === 'today' ? 'active' : ''} onClick={() => selectRange('today')}>
-            浠婂ぉ
+            今天
           </button>
           <button type="button" className={mode === 'week' ? 'active' : ''} onClick={() => selectRange('week')}>
-            鏈懆
+            本周
           </button>
           <button type="button" className={mode === 'custom' ? 'active' : ''} onClick={() => setMode('custom')}>
-            鑷畾涔?          </button>
+            自定义
+          </button>
         </div>
       </div>
 
       <div className="workbench-toolbar">
         <label>
           <CalendarDays size={16} />
-          <span>寮€濮?/span>
+          <span>开始</span>
           <input type="date" value={dates.from} onChange={(event) => updateCustomDate('from', event.target.value)} />
         </label>
         <label>
           <CalendarDays size={16} />
-          <span>缁撴潫</span>
+          <span>结束</span>
           <input type="date" value={dates.to} onChange={(event) => updateCustomDate('to', event.target.value)} />
         </label>
         <button type="button" className="ghost-button" onClick={() => loadWorkbench()} disabled={loading}>
           <RefreshCw size={16} />
-          鍒锋柊
+          刷新
         </button>
       </div>
 
-      <div className="workbench-quick-actions" aria-label="蹇嵎鍏ュ彛">
+      <div className="workbench-quick-actions" aria-label="快捷入口">
         <button type="button" onClick={onCreateTask}>
           <Plus size={18} />
-          <span>鏂板缓浠诲姟</span>
+          <span>新建任务</span>
         </button>
         <button type="button" onClick={openFirstLogTarget}>
           <Clock3 size={18} />
-          <span>鍐欐棩蹇?/span>
+          <span>写日志</span>
         </button>
         <button type="button" onClick={onOpenNotes}>
           <FileText size={18} />
-          <span>鏂板缓绗旇</span>
+          <span>新建笔记</span>
         </button>
         <button type="button" onClick={onOpenAi}>
           <Sparkles size={18} />
-          <span>鎵撳紑 AI</span>
+          <span>打开 AI</span>
         </button>
       </div>
 
       {error && <div className="notice">{error}</div>}
 
       <div className="workbench-metrics">
-        <WorkbenchMetric label="鏈畬鎴愪换鍔? value={data?.metrics?.activeTasks || 0} />
-        <WorkbenchMetric label="鑼冨洿鏃ュ織" value={data?.metrics?.logs || 0} />
-        <WorkbenchMetric label="鎶曞叆鑰楁椂" value={`${data?.metrics?.totalHours || 0}h`} />
-        <WorkbenchMetric label="鏂板闄勪欢" value={data?.metrics?.attachments || 0} />
+        <WorkbenchMetric label="未完成任务" value={data?.metrics?.activeTasks || 0} />
+        <WorkbenchMetric label="范围日志" value={data?.metrics?.logs || 0} />
+        <WorkbenchMetric label="投入耗时" value={`${data?.metrics?.totalHours || 0}h`} />
+        <WorkbenchMetric label="新增附件" value={data?.metrics?.attachments || 0} />
       </div>
 
       {loading && !data ? (
-        <div className="empty-column workbench-loading">姝ｅ湪鍔犺浇宸ヤ綔鍙?..</div>
+        <div className="empty-column workbench-loading">正在加载工作台...</div>
       ) : (
         <>
           <div className="workbench-task-grid">
-            <WorkbenchPanel title="寰呭鐞? count={data?.todoTasks?.length || 0}>
+            <WorkbenchPanel title="待处理" count={data?.todoTasks?.length || 0}>
               {(data?.todoTasks || []).map((task) => (
                 <WorkbenchTaskItem key={task.id} task={task} onOpen={() => onOpenTask(task, 'progress')} />
               ))}
-              {!data?.todoTasks?.length && <div className="empty-column">鏆傛棤浠诲姟</div>}
+              {!data?.todoTasks?.length && <div className="empty-column">暂无任务</div>}
             </WorkbenchPanel>
-            <WorkbenchPanel title="杩涜涓? count={data?.inProgressTasks?.length || 0}>
+            <WorkbenchPanel title="进行中" count={data?.inProgressTasks?.length || 0}>
               {(data?.inProgressTasks || []).map((task) => (
                 <WorkbenchTaskItem key={task.id} task={task} onOpen={() => onOpenTask(task, 'logs')} />
               ))}
-              {!data?.inProgressTasks?.length && <div className="empty-column">鏆傛棤浠诲姟</div>}
+              {!data?.inProgressTasks?.length && <div className="empty-column">暂无任务</div>}
             </WorkbenchPanel>
-            <WorkbenchPanel title="鍗冲皢鎴" count={data?.dueTasks?.length || 0}>
+            <WorkbenchPanel title="即将截止" count={data?.dueTasks?.length || 0}>
               {(data?.dueTasks || []).map((task) => (
                 <WorkbenchTaskItem key={task.id} task={task} onOpen={() => onOpenTask(task, 'progress')} dueFocus />
               ))}
-              {!data?.dueTasks?.length && <div className="empty-column">鏆傛棤浠诲姟</div>}
+              {!data?.dueTasks?.length && <div className="empty-column">暂无任务</div>}
             </WorkbenchPanel>
           </div>
 
           <div className="workbench-lower-grid">
-            <WorkbenchPanel title="宸ヤ綔鏃ュ織" count={data?.logs?.length || 0}>
+            <WorkbenchPanel title="工作日志" count={data?.logs?.length || 0}>
               {(data?.logs || []).map((log) => (
                 <button
                   type="button"
@@ -1769,13 +1772,13 @@ function TodayWorkbenchView({
                 >
                   <strong>{log.taskTitle}</strong>
                   <span>{log.content}</span>
-                  <em>{log.logDate} 路 {log.hours}h 路 {statusLabels[log.stage] || log.stage}</em>
+                  <em>{log.logDate} · {log.hours}h · {statusLabels[log.stage] || log.stage}</em>
                 </button>
               ))}
-              {!data?.logs?.length && <div className="empty-column">鏆傛棤宸ヤ綔鏃ュ織</div>}
+              {!data?.logs?.length && <div className="empty-column">暂无工作日志</div>}
             </WorkbenchPanel>
 
-            <WorkbenchPanel title="鏈€杩戠瑪璁? count={data?.recentNotes?.length || 0}>
+            <WorkbenchPanel title="最近笔记" count={data?.recentNotes?.length || 0}>
               {(data?.recentNotes || []).map((note) => (
                 <button
                   type="button"
@@ -1785,30 +1788,30 @@ function TodayWorkbenchView({
                     onOpenNotes(note.id, { includeLinked: true });
                   }}
                 >
-                  <strong>{note.title || '鏈懡鍚嶇瑪璁?}</strong>
-                  <span>{note.content || '鏆傛棤姝ｆ枃'}</span>
-                  <em>{note.category || '鏈垎绫?} 路 {formatDate(note.updatedAt)}</em>
+                  <strong>{note.title || '未命名笔记'}</strong>
+                  <span>{note.content || '暂无正文'}</span>
+                  <em>{note.category || '未分类'} · {formatDate(note.updatedAt)}</em>
                 </button>
               ))}
-              {!data?.recentNotes?.length && <div className="empty-column">鏆傛棤绗旇</div>}
+              {!data?.recentNotes?.length && <div className="empty-column">暂无笔记</div>}
             </WorkbenchPanel>
 
-            <WorkbenchPanel title="闄勪欢璁板綍" count={data?.attachments?.length || 0}>
+            <WorkbenchPanel title="附件记录" count={data?.attachments?.length || 0}>
               {(data?.attachments || []).map((item) => (
                 <div className="workbench-attachment" key={`${item.kind}-${item.attachment.id}`}>
                   <button type="button" onClick={() => openAttachmentSource(item)}>
                     <Paperclip size={16} />
                     <span>
                       <strong>{item.attachment.originalName}</strong>
-                      <em>{item.sourceLabel} 路 {item.sourceTitle || '鏈懡鍚嶆潵婧?}</em>
+                      <em>{item.sourceLabel} · {item.sourceTitle || '未命名来源'}</em>
                     </span>
                   </button>
                   <a href={item.attachment.downloadUrl} target="_blank" rel="noreferrer">
-                    涓嬭浇
+                    下载
                   </a>
                 </div>
               ))}
-              {!data?.attachments?.length && <div className="empty-column">鏆傛棤闄勪欢</div>}
+              {!data?.attachments?.length && <div className="empty-column">暂无附件</div>}
             </WorkbenchPanel>
           </div>
         </>
@@ -1846,12 +1849,12 @@ function WorkbenchTaskItem({ task, onOpen, dueFocus = false }) {
     <button type="button" className="workbench-task-item" onClick={onOpen}>
       <div className="workbench-task-main">
         <strong>{task.title}</strong>
-        <span>{task.description || '鏆傛棤璇存槑'}</span>
+        <span>{task.description || '暂无说明'}</span>
       </div>
       <div className="workbench-task-meta">
         <span className={`priority ${task.priority}`}>{priorityLabels[task.priority]}</span>
         <span className={`status-chip ${task.status}`}>{statusLabels[task.status]}</span>
-        <span className={overdue ? 'due overdue' : 'due'}>{dueFocus && overdue ? '閫炬湡 ' : ''}{formatDate(task.dueDate)}</span>
+        <span className={overdue ? 'due overdue' : 'due'}>{dueFocus && overdue ? '逾期 ' : ''}{formatDate(task.dueDate)}</span>
       </div>
       <div className="workbench-progress">
         <span>{progress}%</span>
@@ -1886,7 +1889,7 @@ function BoardColumn({ column, tasks, isActiveDrop, onOpenTask, onQuickAdd }) {
             type="button"
             className="column-quick-add"
             onClick={() => onQuickAdd(column.status)}
-            title={`鍦ㄢ€?{column.title}鈥濅腑鏂板缓浠诲姟`}
+            title={`在“${column.title}”中新建任务`}
           >
             <Plus size={14} />
           </button>
@@ -1903,7 +1906,7 @@ function BoardColumn({ column, tasks, isActiveDrop, onOpenTask, onQuickAdd }) {
           ))}
           {!tasks.length && (
             <div className="empty-column board-empty">
-              鏆傛棤浠诲姟
+              暂无任务
             </div>
           )}
         </div>
@@ -2012,8 +2015,8 @@ function TaskProgress({ task }) {
     return (
       <div className="progress-line progress-idle">
         <div>
-          <span>鐘舵€?/span>
-          <strong>鏈紑濮?/strong>
+          <span>状态</span>
+          <strong>未开始</strong>
         </div>
       </div>
     );
@@ -2022,7 +2025,7 @@ function TaskProgress({ task }) {
   return (
     <div className="progress-line">
       <div>
-        <span>{task.status === 'done' ? '宸插畬鎴? : '杩涜涓?}</span>
+        <span>{task.status === 'done' ? '已完成' : '进行中'}</span>
         <strong>{task.status === 'done' ? 100 : task.progress}%</strong>
       </div>
       <div className="progress-track">
@@ -2035,21 +2038,21 @@ function TaskProgress({ task }) {
 function StatusActions({ task, onMove }) {
   const actions = {
     todo: [
-      { status: 'in_progress', label: '寮€濮?, icon: Clock3 },
+      { status: 'in_progress', label: '开始', icon: Clock3 },
     ],
     in_progress: [
-      { status: 'done', label: '瀹屾垚', icon: CheckCircle2 },
-      { status: 'todo', label: '閫€鍥?, icon: ChevronLeft },
+      { status: 'done', label: '完成', icon: CheckCircle2 },
+      { status: 'todo', label: '退回', icon: ChevronLeft },
     ],
     done: [
-      { status: 'in_progress', label: '閲嶅紑', icon: RefreshCw },
+      { status: 'in_progress', label: '重开', icon: RefreshCw },
     ],
   }[task.status] || [];
 
   if (!actions.length) return null;
 
   return (
-    <div className="status-actions" aria-label="浠诲姟鐘舵€佹祦杞?>
+    <div className="status-actions" aria-label="任务状态流转">
       {actions.map((action) => {
         const Icon = action.icon;
         return (
@@ -2057,7 +2060,7 @@ function StatusActions({ task, onMove }) {
             key={action.status}
             type="button"
             className={`flow-button to-${action.status}`}
-            title={`绉诲姩鍒?${statusLabels[action.status]}`}
+            title={`移动到 ${statusLabels[action.status]}`}
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
@@ -2119,32 +2122,33 @@ function TaskModal({ task, defaultStatus = 'todo', initialValues = null, onClose
     <div className="modal-backdrop">
       <form className="task-modal" onSubmit={submit}>
         <div className="modal-head">
-          <h2>{task ? '缂栬緫浠诲姟' : '鏂板缓浠诲姟'}</h2>
-          <button type="button" className="round-button small" onClick={onClose} title="鍏抽棴">
+          <h2>{task ? '编辑任务' : '新建任务'}</h2>
+          <button type="button" className="round-button small" onClick={onClose} title="关闭">
             <X size={16} />
           </button>
         </div>
         {error && <div className="form-error">{error}</div>}
         <label>
-          鏍囬
+          标题
           <input
             required
             value={form.title}
             onChange={(event) => setForm({ ...form, title: event.target.value })}
-            placeholder="浠诲姟鏍囬..."
+            placeholder="任务标题..."
           />
         </label>
         <label>
-          璇存槑
+          说明
           <textarea
             value={form.description}
             onChange={(event) => setForm({ ...form, description: event.target.value })}
-            placeholder="瀵逛换鍔＄殑鍏蜂綋鎻忚堪缁嗚妭..."
+            placeholder="对任务的具体描述细节..."
           />
         </label>
         <div className="form-grid">
           <label>
-            浼樺厛绾?            <select
+            优先级
+            <select
               value={form.priority}
               onChange={(event) => setForm({ ...form, priority: event.target.value })}
             >
@@ -2154,17 +2158,18 @@ function TaskModal({ task, defaultStatus = 'todo', initialValues = null, onClose
             </select>
           </label>
           <label>
-            鐘舵€?            <select
+            状态
+            <select
               value={form.status}
               onChange={(event) => setForm({ ...form, status: event.target.value })}
             >
-              <option value="todo">寰呭姙</option>
-              <option value="in_progress">杩涜涓?/option>
-              <option value="done">宸插畬鎴?/option>
+              <option value="todo">待办</option>
+              <option value="in_progress">进行中</option>
+              <option value="done">已完成</option>
             </select>
           </label>
           <label>
-            鎴鏃ユ湡
+            截止日期
             <input
               type="date"
               value={form.dueDate}
@@ -2172,11 +2177,11 @@ function TaskModal({ task, defaultStatus = 'todo', initialValues = null, onClose
             />
           </label>
           <label>
-            杩涘害
+            进度
             {form.status === 'todo' ? (
-              <div className="locked-progress">寰呭姙浠诲姟榛樿鏈紑濮?/div>
+              <div className="locked-progress">待办任务默认未开始</div>
             ) : form.status === 'done' ? (
-              <div className="locked-progress">宸插畬鎴愪换鍔￠粯璁?100%</div>
+              <div className="locked-progress">已完成任务默认 100%</div>
             ) : (
               <div className="modal-progress-field">
                 <input
@@ -2198,21 +2203,21 @@ function TaskModal({ task, defaultStatus = 'todo', initialValues = null, onClose
           </label>
         </div>
         <label>
-          鏍囩
+          标签
           <input
             value={form.tags}
             onChange={(event) => setForm({ ...form, tags: event.target.value })}
-            placeholder="渚嬪锛氬悎鍚屻€佸鎴枫€佺揣鎬?
+            placeholder="例如：合同、客户、紧急"
           />
         </label>
         <div className="modal-actions">
           <button type="button" className="ghost-button" onClick={onClose}>
             <ChevronLeft size={16} />
-            鍙栨秷
+            取消
           </button>
           <button type="submit" className="icon-button primary" disabled={saving}>
             <Save size={17} />
-            淇濆瓨
+            保存
           </button>
         </div>
       </form>
@@ -2252,7 +2257,7 @@ function TaskDrawer({
       const data = await api.getLogs(task.id, filters);
       setLogs(data);
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
     }
   }
 
@@ -2261,7 +2266,7 @@ function TaskDrawer({
       const data = await api.getNotes(task.id, { search });
       setNotes(data);
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
     }
   }
 
@@ -2270,7 +2275,7 @@ function TaskDrawer({
       const data = await api.getTaskAttachments(task.id);
       setTaskFiles(data);
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
     }
   }
 
@@ -2329,8 +2334,8 @@ function TaskDrawer({
   function createLogDraftFromNote(note) {
     const plainContent = String(note.content || extractPlainTextFromDoc(note.contentJson) || '').trim();
     const content = [
-      `鏉ユ簮绗旇锛?{note.title || '鏈懡鍚嶇瑪璁?}`,
-      note.category ? `鍒嗙被锛?{note.category}` : '',
+      `来源笔记：${note.title || '未命名笔记'}`,
+      note.category ? `分类：${note.category}` : '',
       plainContent,
     ].filter(Boolean).join('\n\n');
 
@@ -2342,10 +2347,10 @@ function TaskDrawer({
         hours: '0.25',
         progressSnapshot: String(progressForStatus(task.status, task.progress)),
         stage: task.status,
-        nextStep: `缁х画璺熻繘銆?{note.title || '杩欐潯绗旇'}銆嶄腑璁板綍鐨勪簨椤广€俙,
+        nextStep: `继续跟进「${note.title || '这条笔记'}」中记录的事项。`,
       },
       detailsOpen: true,
-      status: '宸叉牴鎹瑪璁扮敓鎴愭棩蹇楄崏绋匡紝璇风‘璁ゅ悗鍐嶈褰曘€?,
+      status: '已根据笔记生成日志草稿，请确认后再记录。',
     });
     setActiveSection('logs');
   }
@@ -2364,21 +2369,21 @@ function TaskDrawer({
         nextStep: draft.nextStep || '',
       },
       detailsOpen: Boolean(draft.nextStep || draft.hours),
-      status: 'AI 宸茬敓鎴愭棩蹇楄崏绋匡紝璇风‘璁ゅ悗鍐嶈褰曘€?,
+      status: 'AI 已生成日志草稿，请确认后再记录。',
     });
     setActiveSection('logs');
   }
 
   async function removeLog(log) {
-    const ok = await askConfirm('纭鍒犻櫎鏃ュ織', '纭畾瑕佸垹闄よ繖鏉″伐浣滆褰曟棩蹇楀悧锛熸棩蹇椾細杩涘叆鍥炴敹绔欙紝鍙仮澶嶃€?);
+    const ok = await askConfirm('确认删除日志', '确定要删除这条工作记录日志吗？日志会进入回收站，可恢复。');
     if (!ok) return;
     try {
       await api.deleteLog(log.id);
-      addToast('success', '宸茬Щ鍏ュ洖鏀剁珯', '鍙湪鍥炴敹绔欐仮澶嶈繖鏉℃棩蹇椼€?);
+      addToast('success', '已移入回收站', '可在回收站恢复这条日志。');
       await loadLogs();
       await onChanged();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
@@ -2389,98 +2394,99 @@ function TaskDrawer({
         <div className="drawer-head">
           <div>
             <span className={`priority ${task.priority}`} style={{ marginBottom: '8px' }}>
-              {priorityLabels[task.priority]}浼樺厛绾?            </span>
+              {priorityLabels[task.priority]}优先级
+            </span>
             <h2>{task.title}</h2>
           </div>
-          <button className="round-button small" onClick={onClose} title="鍏抽棴">
+          <button className="round-button small" onClick={onClose} title="关闭">
             <X size={16} />
           </button>
         </div>
         <div className="drawer-meta">
           <span>{statusLabels[task.status]}</span>
-          <span>鎴锛歿formatDate(task.dueDate)}</span>
-          <span className="note-meta">绗旇锛歿notes.length} 鏉?/span>
+          <span>截止：{formatDate(task.dueDate)}</span>
+          <span className="note-meta">笔记：{notes.length} 条</span>
         </div>
         {task.description && <p className="drawer-desc">{task.description}</p>}
         <div className="drawer-actions">
           <button className="ghost-button" onClick={onEdit}>
             <Edit3 size={15} />
-            缂栬緫浠诲姟
+            编辑任务
           </button>
           <button className="danger-button" onClick={onDelete}>
             <Trash2 size={15} />
-            鍒犻櫎浠诲姟
+            删除任务
           </button>
         </div>
 
-        <div className="drawer-tabs" role="tablist" aria-label="浠诲姟璇︽儏">
+        <div className="drawer-tabs" role="tablist" aria-label="任务详情">
           <button
             type="button"
             className={activeSection === 'progress' ? 'active' : ''}
             onClick={() => setActiveSection('progress')}
           >
-            杩涘害
+            进度
           </button>
           <button
             type="button"
             className={activeSection === 'logs' ? 'active' : ''}
             onClick={() => setActiveSection('logs')}
           >
-            鏃ュ織 {logs.length}
+            日志 {logs.length}
           </button>
           <button
             type="button"
             className={activeSection === 'notes' ? 'active' : ''}
             onClick={() => setActiveSection('notes')}
           >
-            绗旇 {notes.length}
+            笔记 {notes.length}
           </button>
           <button
             type="button"
             className={activeSection === 'attachments' ? 'active' : ''}
             onClick={() => setActiveSection('attachments')}
           >
-            闄勪欢 {taskFiles.length}
+            附件 {taskFiles.length}
           </button>
           <button
             type="button"
             className={activeSection === 'ai' ? 'active' : ''}
             onClick={() => setActiveSection('ai')}
           >
-            鏅鸿兘
+            智能
           </button>
         </div>
 
         {activeSection === 'progress' && (
           <section className="drawer-section">
             <div className="drawer-status-flow">
-              <span>鐘舵€佹祦杞?/span>
+              <span>状态流转</span>
               <StatusActions task={task} onMove={onMove} />
             </div>
             <section className={`progress-editor ${task.status !== 'in_progress' ? 'locked' : ''}`}>
               {task.status === 'todo' ? (
                 <>
                   <div>
-                    <span>浠诲姟杩涘害</span>
-                    <strong>鏈紑濮?/strong>
+                    <span>任务进度</span>
+                    <strong>未开始</strong>
                   </div>
-                  <p className="progress-hint">寰呭姙浠诲姟鍏堜粠涓婃柟鍒囨崲鍒拌繘琛屼腑锛屽啀寮€濮嬭褰曠櫨鍒嗘瘮</p>
+                  <p className="progress-hint">待办任务先从上方切换到进行中，再开始记录百分比</p>
                 </>
               ) : task.status === 'done' ? (
                 <>
                   <div>
-                    <span>浠诲姟杩涘害</span>
+                    <span>任务进度</span>
                     <strong>100%</strong>
                   </div>
                   <div className="progress-track large">
                     <span style={{ width: '100%' }} />
                   </div>
-                  <p className="progress-hint">宸插畬鎴愪换鍔″浐瀹氫负 100%锛岄渶瑕佺户缁鐞嗗彲鍏堥噸寮€</p>
+                  <p className="progress-hint">已完成任务固定为 100%，需要继续处理可先重开</p>
                 </>
               ) : (
                 <>
                   <div>
-                    <span>璋冩暣浠诲姟杩涘害</span>
+                    <span>调整任务进度</span>
                     <strong>{progress}%</strong>
                   </div>
                   <div className="progress-control-row">
@@ -2508,7 +2514,7 @@ function TaskDrawer({
                   </div>
                   <button className="ghost-button" onClick={saveProgress} disabled={savingProgress} style={{ marginTop: '4px' }}>
                     <Save size={15} />
-                    淇濆瓨杩涘害
+                    保存进度
                   </button>
                 </>
               )}
@@ -2519,7 +2525,7 @@ function TaskDrawer({
         {activeSection === 'logs' && (
           <section className="drawer-section">
             <LogComposer task={task} seed={logComposerSeed} onCreated={async () => {
-              addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+              addToast('success', '完成', '操作已完成。');
               setLogComposerSeed(null);
               await loadLogs();
               await onChanged();
@@ -2528,13 +2534,13 @@ function TaskDrawer({
             <section className="logs">
               <div className="logs-head">
                 <div>
-                  <h3>鍘嗗彶宸ヤ綔鏃ュ織</h3>
-                  <span>{logs.length} 鏉¤褰暵?{logHours.toFixed(2).replace(/\.00$/, '')} 灏忔椂</span>
+                  <h3>历史工作日志</h3>
+                  <span>{logs.length} 条记录· {logHours.toFixed(2).replace(/\.00$/, '')} 小时</span>
                 </div>
                 <button
                   type="button"
                   className="round-button small"
-                  title="閲嶇疆鏃ュ織绛涢€?
+                  title="重置日志筛选"
                   onClick={() => setLogFilters({ search: '', from: '', to: '', stage: '', minHours: '', maxHours: '' })}
                 >
                   <RefreshCw size={14} />
@@ -2546,11 +2552,11 @@ function TaskDrawer({
                   <input
                     value={logFilters.search}
                     onChange={(event) => setLogFilters({ ...logFilters, search: event.target.value })}
-                    placeholder="鎼滅储鏃ュ織鍐呭銆佷笅涓€姝ヨ鍒?.."
+                    placeholder="搜索日志内容、下一步计划..."
                   />
                 </label>
                 <label>
-                  <span>寮€</span>
+                  <span>开</span>
                   <input
                     type="date"
                     value={logFilters.from}
@@ -2558,7 +2564,7 @@ function TaskDrawer({
                   />
                 </label>
                 <label>
-                  <span>缁撴潫</span>
+                  <span>结束</span>
                   <input
                     type="date"
                     value={logFilters.to}
@@ -2566,19 +2572,19 @@ function TaskDrawer({
                   />
                 </label>
                 <label>
-                  <span>闃舵</span>
+                  <span>阶段</span>
                   <select
                     value={logFilters.stage}
                     onChange={(event) => setLogFilters({ ...logFilters, stage: event.target.value })}
                   >
-                    <option value="">鍏ㄩ儴闃舵</option>
+                    <option value="">全部阶段</option>
                     {columnStatuses.map((status) => (
                       <option value={status} key={status}>{statusLabels[status]}</option>
                     ))}
                   </select>
                 </label>
                 <label>
-                  <span>鏈€灏戣€楁椂</span>
+                  <span>最少耗时</span>
                   <input
                     type="number"
                     min="0"
@@ -2589,7 +2595,7 @@ function TaskDrawer({
                   />
                 </label>
                 <label>
-                  <span>鏈€澶氳€楁椂</span>
+                  <span>最多耗时</span>
                   <input
                     type="number"
                     min="0"
@@ -2607,7 +2613,7 @@ function TaskDrawer({
                     <article className="timeline-content">
                       <div className="timeline-head">
                         <div className="timeline-title-row">
-                          <span className={`stage-pill ${log.stage}`}>{statusLabels[log.stage] || '闃舵璁板綍'}</span>
+                          <span className={`stage-pill ${log.stage}`}>{statusLabels[log.stage] || '阶段记录'}</span>
                           <span className="date">{log.logDate}</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2616,29 +2622,29 @@ function TaskDrawer({
                             className="round-button small"
                             type="button"
                             onClick={() => setEditingLog(log)}
-                            title="缂栬緫鏃ュ織"
+                            title="编辑日志"
                             style={{ width: '24px', height: '24px', minHeight: '24px' }}
                           >
                             <Edit3 size={12} />
                           </button>
-                          <button className="round-button small" onClick={() => removeLog(log)} title="鍒犻櫎鏃ュ織" style={{ width: '24px', height: '24px', minHeight: '24px' }}>
+                          <button className="round-button small" onClick={() => removeLog(log)} title="删除日志" style={{ width: '24px', height: '24px', minHeight: '24px' }}>
                             <Trash2 size={12} />
                           </button>
                         </div>
                       </div>
                       <div className="timeline-body">{log.content}</div>
                       <div className="timeline-foot">
-                        <span>褰撴椂杩涘害 {log.progressSnapshot}%</span>
-                        {log.nextStep && <span className="next">涓嬩竴姝ワ細{log.nextStep}</span>}
+                        <span>当时进度 {log.progressSnapshot}%</span>
+                        {log.nextStep && <span className="next">下一步：{log.nextStep}</span>}
                         {log.nextStep && onCreateTaskFromLog && (
                           <button
                             type="button"
                             className="ghost-button tiny log-next-task-button"
                             onClick={() => onCreateTaskFromLog(task, log)}
-                            title="鎶婁笅涓€姝ヨ鍒掕浆涓轰换鍔¤崏绋?
+                            title="把下一步计划转为任务草稿"
                           >
                             <Plus size={12} />
-                            杞负浠诲姟
+                            转为任务
                           </button>
                         )}
                       </div>
@@ -2647,7 +2653,7 @@ function TaskDrawer({
                   </div>
                 ))}
               </div>
-              {!logs.length && <div className="empty-column">娌℃湁鍖归厤鐨勫伐浣滄棩蹇?/div>}
+              {!logs.length && <div className="empty-column">没有匹配的工作日志</div>}
             </section>
           </section>
         )}
@@ -2700,17 +2706,17 @@ function TaskDrawer({
 }
 
 const actionTypeLabels = {
-  create_task: '鍒涘缓浠诲姟',
-  update_task: '鏇存柊浠诲姟',
-  create_log: '鏂板鏃ュ織',
-  update_log: '缂栬緫鏃ュ織',
-  create_note: '鏂板绗旇',
-  update_note: '缂栬緫绗旇',
+  create_task: '创建任务',
+  update_task: '更新任务',
+  create_log: '新增日志',
+  update_log: '编辑日志',
+  create_note: '新增笔记',
+  update_note: '编辑笔记',
 };
 
 function tagsToText(tags) {
-  if (Array.isArray(tags)) return tags.filter(Boolean).join('锛?);
-  return String(tags || '').split(',').map((tag) => tag.trim()).filter(Boolean).join('锛?);
+  if (Array.isArray(tags)) return tags.filter(Boolean).join('，');
+  return String(tags || '').split(',').map((tag) => tag.trim()).filter(Boolean).join('，');
 }
 
 function ActionPayloadSummary({ action }) {
@@ -2719,21 +2725,21 @@ function ActionPayloadSummary({ action }) {
 
   if (action.actionType === 'create_task') {
     rows.push(
-      ['浠诲姟鏍囬', payload.title],
-      ['浼樺厛绾?, priorityLabels[payload.priority] || payload.priority || '涓?],
-      ['鐘舵€?, statusLabels[payload.status] || '寰呭姙'],
-      ['鎴鏃ユ湡', formatDate(payload.dueDate)],
-      ['鏍囩', tagsToText(payload.tags)],
-      ['鏉ユ簮浠诲姟', payload.sourceTaskId ? `浠诲姟 #${payload.sourceTaskId}` : '褰撳墠 AI 寤鸿'],
-      ['鏉ユ簮璇存槑', payload.sourceReason],
-      ['浠诲姟璇存槑', payload.description],
+      ['任务标题', payload.title],
+      ['优先级', priorityLabels[payload.priority] || payload.priority || '中'],
+      ['状态', statusLabels[payload.status] || '待办'],
+      ['截止日期', formatDate(payload.dueDate)],
+      ['标签', tagsToText(payload.tags)],
+      ['来源任务', payload.sourceTaskId ? `任务 #${payload.sourceTaskId}` : '当前 AI 建议'],
+      ['来源说明', payload.sourceReason],
+      ['任务说明', payload.description],
     );
   } else {
     rows.push(
-      ['鍔ㄤ綔绫诲瀷', actionTypeLabels[action.actionType] || action.actionType],
-      ['鐩爣绫诲瀷', action.targetType || payload.targetType],
-      ['鐩爣 ID', action.targetId || payload.taskId || payload.logId || payload.noteId],
-      ['鏉ユ簮璇存槑', payload.sourceReason],
+      ['动作类型', actionTypeLabels[action.actionType] || action.actionType],
+      ['目标类型', action.targetType || payload.targetType],
+      ['目标 ID', action.targetId || payload.taskId || payload.logId || payload.noteId],
+      ['来源说明', payload.sourceReason],
     );
   }
 
@@ -2757,29 +2763,29 @@ function ActionRequestsModal({ actions, loading, onClose, onRefresh, onApprove, 
 
   return (
     <div className="modal-backdrop">
-      <section className="approval-modal" role="dialog" aria-modal="true" aria-label="OpenClaw 瀹℃壒">
+      <section className="approval-modal" role="dialog" aria-modal="true" aria-label="OpenClaw 审批">
         <div className="modal-head">
           <div>
-            <h2>OpenClaw 瀹℃壒</h2>
-            <p>AI 鎴栧閮ㄦ櫤鑳戒綋鎻愬嚭鐨勫啓鍏ュ姩浣滀細鍏堝仠鍦ㄨ繖閲岋紝鎵瑰噯鍚庢墠浼氫慨鏀逛换鍔″彴</p>
+            <h2>OpenClaw 审批</h2>
+            <p>AI 或外部智能体提出的写入动作会先停在这里，批准后才会修改任务台</p>
           </div>
-          <button type="button" className="round-button small" onClick={onClose} title="鍏抽棴">
+          <button type="button" className="round-button small" onClick={onClose} title="关闭">
             <X size={16} />
           </button>
         </div>
         <div className="approval-toolbar">
-          <span>{loading ? '姝ｅ湪鍒锋柊...' : `寰呭鎵?${actions.length} 鏉}</span>
+          <span>{loading ? '正在刷新...' : `待审批 ${actions.length} 条`}</span>
           <button type="button" className="ghost-button" onClick={onRefresh}>
             <RefreshCw size={14} />
-            鍒锋柊
+            刷新
           </button>
         </div>
         <div className="approval-list">
           {!actions.length && !loading && (
             <div className="approval-empty">
               <ShieldCheck size={22} />
-              <strong>鏆傛棤寰呭鎵?/strong>
-              <span>OpenClaw 鎻愪氦鏂扮殑鍐欏叆璇锋眰鍚庝細鍑虹幇鍦ㄨ繖閲屻€?/span>
+              <strong>暂无待审批</strong>
+              <span>OpenClaw 提交新的写入请求后会出现在这里。</span>
             </div>
           )}
           {actions.map((action) => {
@@ -2790,16 +2796,16 @@ function ActionRequestsModal({ actions, loading, onClose, onRefresh, onApprove, 
                   <div>
                     <span className="approval-type">{actionTypeLabels[action.actionType] || action.actionType}</span>
                     <h3>{action.title || ('Action #' + action.id)}</h3>
-                    <p>鍒涘缓鏃堕棿锛歿action.createdAt} 路 璇锋眰鏉ユ簮锛歿action.requestedBy || action.source}</p>
+                    <p>创建时间：{action.createdAt} · 请求来源：{action.requestedBy || action.source}</p>
                   </div>
                   <button
                     type="button"
                     className="ghost-button tiny"
                     onClick={() => setExpandedId(expanded ? null : action.id)}
-                    title={expanded ? '鏀惰捣璇︽儏' : '鏌ョ湅璇︽儏'}
+                    title={expanded ? '收起详情' : '查看详情'}
                   >
                     {expanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                    {expanded ? '鏀惰捣 JSON' : '鏌ョ湅 JSON'}
+                    {expanded ? '收起 JSON' : '查看 JSON'}
                   </button>
                 </div>
                 <ActionPayloadSummary action={action} />
@@ -2810,11 +2816,11 @@ function ActionRequestsModal({ actions, loading, onClose, onRefresh, onApprove, 
                 <div className="approval-actions">
                   <button type="button" className="ghost-button" onClick={() => onReject(action)}>
                     <X size={15} />
-                    鎷掔粷
+                    拒绝
                   </button>
                   <button type="button" className="icon-button primary" onClick={() => onApprove(action)}>
                     <Check size={15} />
-                    鎵瑰噯鎵ц
+                    批准执行
                   </button>
                 </div>
               </article>
@@ -2853,7 +2859,7 @@ function updateAiMessage(messages, messageId, updater) {
 function normalizeClientActionUrl(value, { allowRelative = false } = {}) {
   const text = String(value || '')
     .trim()
-    .replace(/[)\]}>,锛屻€傦紱;?!锛侊紵]+$/g, '');
+    .replace(/[)\]}>,，。；;?!！？]+$/g, '');
   if (!text) return null;
   if (allowRelative && text.startsWith('/')) return text;
   try {
@@ -2915,7 +2921,7 @@ async function copyTextToClipboard(value) {
   document.body.removeChild(textarea);
 }
 
-function CopyButton({ value, label = '澶嶅埗', copiedLabel = '宸插鍒?, className = 'ghost-button tiny', title }) {
+function CopyButton({ value, label = '复制', copiedLabel = '已复制', className = 'ghost-button tiny', title }) {
   const [copied, setCopied] = useState(false);
 
   async function copy(event) {
@@ -3129,15 +3135,15 @@ function AiActionStrip({ links = [], files = [] }) {
         <div className="ai-action-card" key={link.url}>
           <Link2 size={16} />
           <span>
-            <strong>{link.label || '閾炬帴'}</strong>
+            <strong>{link.label || '链接'}</strong>
             <small>{displayActionUrl(link.url)}</small>
           </span>
           <div className="ai-action-card-actions">
             <a className="ghost-button tiny" href={link.url} target="_blank" rel="noopener noreferrer">
               <ExternalLink size={14} />
-              鎵撳紑
+              打开
             </a>
-            <CopyButton value={link.url} label="澶嶅埗閾炬帴" />
+            <CopyButton value={link.url} label="复制链接" />
           </div>
         </div>
       ))}
@@ -3146,23 +3152,23 @@ function AiActionStrip({ links = [], files = [] }) {
           <div className="ai-action-card" key={`${file.kind || 'file'}-${file.id || file.downloadUrl}`}>
             {file.isImage ? <ImageIcon size={16} /> : <Paperclip size={16} />}
             <span>
-              <strong>{file.fileName || '闄勪欢'}</strong>
-              <small>{file.mimeType || '鏂囦欢'}</small>
+              <strong>{file.fileName || '附件'}</strong>
+              <small>{file.mimeType || '文件'}</small>
             </span>
             <div className="ai-action-card-actions">
               {file.previewUrl && (
                 <a className="ghost-button tiny" href={file.previewUrl} target="_blank" rel="noopener noreferrer">
                   <ExternalLink size={14} />
-                  棰勮
+                  预览
                 </a>
               )}
               {file.downloadUrl && (
                 <a className="ghost-button tiny" href={file.downloadUrl} target="_blank" rel="noopener noreferrer" download>
                   <Download size={14} />
-                  涓嬭浇
+                  下载
                 </a>
               )}
-              <CopyButton value={file.fileName || file.downloadUrl} label="澶嶅埗鏂囦欢鍚? />
+              <CopyButton value={file.fileName || file.downloadUrl} label="复制文件名" />
             </div>
           </div>
         );
@@ -3177,7 +3183,7 @@ function AiMessageTools({ message }) {
   const plainText = aiContentToPlainText(message.content);
   return (
     <div className="ai-message-tools">
-      <CopyButton value={plainText} label="澶嶅埗鍏ㄦ枃" className="ghost-button small" />
+      <CopyButton value={plainText} label="复制全文" className="ghost-button small" />
       <AiActionStrip links={links} />
     </div>
   );
@@ -3198,17 +3204,17 @@ function sourceFileAction(source) {
 
 function sourceTypeLabel(source) {
   const type = source?.entityType;
-  if (type === 'task') return '浠诲姟';
-  if (type === 'log') return '鏃ュ織';
-  if (type === 'note') return source.taskId ? '浠诲姟绗旇' : '鐙珛绗旇';
-  if (type === 'task_attachment') return '浠诲姟闄勪欢';
-  if (type === 'log_attachment') return '鏃ュ織闄勪欢';
-  if (type === 'note_attachment') return source.taskId ? '浠诲姟绗旇闄勪欢' : '鐙珛绗旇闄勪欢';
-  return '璧勬枡';
+  if (type === 'task') return '任务';
+  if (type === 'log') return '日志';
+  if (type === 'note') return source.taskId ? '任务笔记' : '独立笔记';
+  if (type === 'task_attachment') return '任务附件';
+  if (type === 'log_attachment') return '日志附件';
+  if (type === 'note_attachment') return source.taskId ? '任务笔记附件' : '独立笔记附件';
+  return '资料';
 }
 
 function AiSourceList({ sources = [], onOpenSource }) {
-  if (!sources.length) return <p className="ai-empty">鏆傛棤鍙紩鐢ㄧ殑璧勬枡銆?/p>;
+  if (!sources.length) return <p className="ai-empty">暂无可引用的资料。</p>;
 
   return (
     <div className="ai-source-list">
@@ -3237,10 +3243,10 @@ function AiSourceList({ sources = [], onOpenSource }) {
               {onOpenSource && (
                 <button type="button" className="ghost-button tiny" onClick={() => onOpenSource(source)}>
                   <ExternalLink size={14} />
-                  鎵撳紑鏉ユ簮
+                  打开来源
                 </button>
               )}
-              <CopyButton value={source.copyText || source.excerpt || source.label} label="澶嶅埗鏉ユ簮" />
+              <CopyButton value={source.copyText || source.excerpt || source.label} label="复制来源" />
             </div>
             <AiActionStrip links={links} files={file ? [file] : []} />
           </article>
@@ -3252,48 +3258,48 @@ function AiSourceList({ sources = [], onOpenSource }) {
 
 const aiLocalCachePrefix = 'assistant-task-board:ai-conversations:';
 const aiText = {
-  newChat: '鏂板璇?,
-  history: '鍘嗗彶瀵硅瘽',
-  closeHistory: '鍏抽棴鍘嗗彶',
-  noContent: '鏆傛棤鍐呭',
-  emptyHistory: '杩樻病鏈夊巻鍙插璇濄€?,
-  rename: '閲嶅懡鍚?,
-  delete: '鍒犻櫎',
-  startTitle: '寮€濮嬩竴娆℃櫤鑳芥绱?,
-  startHint: '鍙互杩炵画鎻愰棶锛孉I 浼氭牴鎹换鍔°€佹棩蹇椼€佺瑪璁板拰闄勪欢璧勬枡鍥炵瓟銆?,
-  you: '浣?,
-  thinking: '姝ｅ湪鏁寸悊鍥炵瓟',
-  sources: '鏌ョ湅鏉ユ簮',
-  loadingHistory: '姝ｅ湪杞藉叆鍘嗗彶...',
-  renamePrompt: '閲嶅懡鍚嶅璇?,
-  deletePrefix: '鍒犻櫎瀵硅瘽鈥?,
-  deleteSuffix: '鈥濓紵',
-  failed: '杩欐鍥炵瓟娌℃湁鎴愬姛锛岃绋嶅悗閲嶈瘯銆?,
-  taskAi: '浠诲姟 AI',
-  workspaceAi: 'AI 宸ヤ綔鍖?,
-  taskTitle: '浠诲姟鏅鸿兘闂瓟',
-  workspaceTitle: '鏅鸿兘妫€绱?,
-  askTask: '闂棶杩欎釜浠诲姟鐨勮繘灞曘€佺己鍙ｆ垨涓嬩竴姝?..',
-  askWorkspace: '璇㈤棶浠诲姟銆佹棩蹇椼€佺瑪璁版垨闄勪欢閲岀殑鍐呭...',
-  generating: '鐢熸垚涓?,
-  send: '鍙戦€?,
+  newChat: '新对话',
+  history: '历史对话',
+  closeHistory: '关闭历史',
+  noContent: '暂无内容',
+  emptyHistory: '还没有历史对话。',
+  rename: '重命名',
+  delete: '删除',
+  startTitle: '开始一次智能检索',
+  startHint: '可以连续提问，AI 会根据任务、日志、笔记和附件资料回答。',
+  you: '你',
+  thinking: '正在整理回答',
+  sources: '查看来源',
+  loadingHistory: '正在载入历史...',
+  renamePrompt: '重命名对话',
+  deletePrefix: '删除对话“',
+  deleteSuffix: '”？',
+  failed: '这次回答没有成功，请稍后重试。',
+  taskAi: '任务 AI',
+  workspaceAi: 'AI 工作区',
+  taskTitle: '任务智能问答',
+  workspaceTitle: '智能检索',
+  askTask: '问问这个任务的进展、缺口或下一步...',
+  askWorkspace: '询问任务、日志、笔记或附件里的内容...',
+  generating: '生成中',
+  send: '发送',
 };
 
 const taskAiQuickPrompts = [
   {
     id: 'task-summary',
-    label: '鎬荤粨杩涘睍',
-    prompt: '璇峰熀浜庡綋鍓嶄换鍔＄殑鐘舵€併€佽鏄庛€佸叧閿棩蹇椼€佷换鍔＄瑪璁板拰闄勪欢璧勬枡锛岀敓鎴愪竴涓彲宓屽叆椤甸潰鐨勫畨鍏?HTML 浠诲姟杩涘睍鎬荤粨銆傝鍖呭惈锛氬綋鍓嶇姸鎬併€佸凡瀹屾垚鍐呭銆佸叧閿棩蹇椼€侀檮浠?璧勬枡銆侀闄╂垨闃诲銆佷笅涓€姝ヨ鍒掋€傚彲浠ヤ娇鐢ㄦ暟鎹潰鏉裤€佸垪琛ㄦ垨琛ㄦ牸锛屼絾涓嶈缂栭€犺祫鏂欍€?,
+    label: '总结进展',
+    prompt: '请基于当前任务的状态、说明、关键日志、任务笔记和附件资料，生成一个可嵌入页面的安全 HTML 任务进展总结。请包含：当前状态、已完成内容、关键日志、附件/资料、风险或阻塞、下一步计划。可以使用数据面板、列表或表格，但不要编造资料。',
   },
   {
     id: 'next-steps',
-    label: '鎻愬彇涓嬩竴姝?,
-    prompt: '璇峰彧鏍规嵁褰撳墠浠诲姟宸叉湁璧勬枡锛屾彁鍙栨帴涓嬫潵鏈€搴旇澶勭悊鐨勪笅涓€姝ヨ鍒掋€傝鐢ㄥ畨鍏?HTML 杈撳嚭锛屾寜浼樺厛绾у垪鍑哄緟鍔炰簨椤广€佸師鍥犮€佸缓璁埅姝㈡椂闂存垨闇€瑕佺‘璁ょ殑淇℃伅锛涙棤娉曠‘璁ょ殑鍐呭璇锋爣娉ㄢ€滃緟纭鈥濄€?,
+    label: '提取下一步',
+    prompt: '请只根据当前任务已有资料，提取接下来最应该处理的下一步计划。请用安全 HTML 输出，按优先级列出待办事项、原因、建议截止时间或需要确认的信息；无法确认的内容请标注“待确认”。',
   },
   {
     id: 'task-review',
-    label: '浠诲姟澶嶇洏',
-    prompt: '璇峰褰撳墠浠诲姟鍋氫竴浠界畝娲佸鐩橈紝浣跨敤瀹夊叏 HTML 杈撳嚭銆傝鍖呭惈鐩爣銆佽繃绋嬫憳瑕併€佸凡瀹屾垚鎴愭灉銆侀仐鐣欓棶棰樸€佸彲澶嶇敤缁忛獙鍜屽悗缁缓璁紱涓嶈鏂板浜嬪疄銆?,
+    label: '任务复盘',
+    prompt: '请对当前任务做一份简洁复盘，使用安全 HTML 输出。请包含目标、过程摘要、已完成成果、遗留问题、可复用经验和后续建议；不要新增事实。',
   },
 ];
 
@@ -3378,7 +3384,7 @@ function AiChatThread({ messages, onOpenSource }) {
     <div className="ai-chat-thread" aria-live="polite">
       {messages.map((message) => (
         <article className={'ai-chat-message ' + message.role} key={message.id}>
-          <span className="ai-chat-role">{message.role === 'user' ? '鎴? : 'AI'}</span>
+          <span className="ai-chat-role">{message.role === 'user' ? '我' : 'AI'}</span>
           <div className="ai-chat-bubble">
             {message.role === 'assistant' ? (
               message.content ? (
@@ -3740,7 +3746,7 @@ function AiConversationShell({ scope = 'workspace', taskId = null, compact = fal
         {loadingMessages && <p className="ai-loading-line">{aiText.loadingHistory}</p>}
         {error && <div className="form-error">{error}</div>}
         {compact && (
-          <div className="ai-quick-actions" aria-label="浠诲姟 AI 蹇嵎鍔ㄤ綔">
+          <div className="ai-quick-actions" aria-label="任务 AI 快捷动作">
             {taskAiQuickPrompts.map((item) => (
               <button
                 type="button"
@@ -3788,10 +3794,10 @@ function TaskAiSummaryPanel({ taskId, addToast }) {
     try {
       const result = await api.getTaskAiSummary(taskId);
       setSummary(result);
-      addToast?.('success', '瀹屾垚', 'AI 宸茬敓鎴愪换鍔¤繘灞曟€荤粨銆?);
+      addToast?.('success', '完成', 'AI 已生成任务进展总结。');
     } catch (err) {
       setError(err.message);
-      addToast?.('error', '鍑洪敊浜?, err.message);
+      addToast?.('error', '出错了', err.message);
     } finally {
       setLoading(false);
     }
@@ -3801,12 +3807,12 @@ function TaskAiSummaryPanel({ taskId, addToast }) {
     <section className="task-ai-summary-panel">
       <div className="task-ai-suggestions-head">
         <div>
-          <span>AI 澶嶇洏</span>
-          <strong>浠诲姟杩涘睍鎬荤粨</strong>
+          <span>AI 复盘</span>
+          <strong>任务进展总结</strong>
         </div>
         <button type="button" className="ghost-button" onClick={loadSummary} disabled={loading}>
           <Sparkles size={14} />
-          {loading ? '鐢熸垚涓?..' : summary ? '閲嶆柊鐢熸垚' : '鐢熸垚鎬荤粨'}
+          {loading ? '生成中...' : summary ? '重新生成' : '生成总结'}
         </button>
       </div>
       {error && <div className="notice">{error}</div>}
@@ -3818,7 +3824,7 @@ function TaskAiSummaryPanel({ taskId, addToast }) {
           />
         </div>
       ) : (
-        <p className="task-ai-summary-empty">姹囨€诲綋鍓嶄换鍔＄殑鐘舵€併€佹棩蹇椼€佺瑪璁板拰闄勪欢锛岀敓鎴愪竴寮犱究浜庡洖椤剧殑杩涘睍鍗＄墖銆?/p>
+        <p className="task-ai-summary-empty">汇总当前任务的状态、日志、笔记和附件，生成一张便于回顾的进展卡片。</p>
       )}
     </section>
   );
@@ -3837,7 +3843,7 @@ function TaskAiSuggestionPanel({ taskId, addToast }) {
       const result = await api.getTaskAiSuggestions(taskId, { limit: 5 });
       setSuggestions(result.suggestions || []);
       if (!result.suggestions?.length) {
-        setError('AI 娌℃湁鎵惧埌閫傚悎鏂板缓鐨勫悗缁换鍔°€?);
+        setError('AI 没有找到适合新建的后续任务。');
       }
     } catch (err) {
       setError(err.message);
@@ -3851,12 +3857,12 @@ function TaskAiSuggestionPanel({ taskId, addToast }) {
       await api.createAiTaskSuggestionAction({
         ...suggestion,
         sourceTaskId: taskId,
-        sourceReason: '鏍规嵁褰撳墠浠诲姟鐨勭姸鎬併€佹棩蹇椼€佺瑪璁板拰闄勪欢璧勬枡鐢熸垚鐨勫悗缁换鍔″缓璁?,
+        sourceReason: '根据当前任务的状态、日志、笔记和附件资料生成的后续任务建议',
       });
       setRequestedIds((current) => new Set([...current, suggestion.id]));
-      addToast?.('success', '宸插姞鍏ュ鎵?, '璇峰湪椤堕儴鈥滃鎵光€濋噷纭鍚庢墽琛屻€?);
+      addToast?.('success', '已加入审批', '请在顶部“审批”里确认后执行。');
     } catch (err) {
-      addToast?.('error', '鍑洪敊浜?, err.message);
+      addToast?.('error', '出错了', err.message);
       setError(err.message);
     }
   }
@@ -3865,12 +3871,12 @@ function TaskAiSuggestionPanel({ taskId, addToast }) {
     <section className="task-ai-suggestions">
       <div className="task-ai-suggestions-head">
         <div>
-          <span>AI 寤鸿</span>
-          <strong>鍚庣画浠诲姟</strong>
+          <span>AI 建议</span>
+          <strong>后续任务</strong>
         </div>
         <button type="button" className="ghost-button" onClick={loadSuggestions} disabled={loading}>
           <Sparkles size={14} />
-          {loading ? '鐢熸垚涓?..' : '鐢熸垚寤鸿'}
+          {loading ? '生成中...' : '生成建议'}
         </button>
       </div>
       {error && <div className="notice">{error}</div>}
@@ -3883,8 +3889,8 @@ function TaskAiSuggestionPanel({ taskId, addToast }) {
                 <div>
                   <strong>{suggestion.title}</strong>
                   {suggestion.description && <p>{suggestion.description}</p>}
-                  <span>{priorityLabels[suggestion.priority] || '涓?}浼樺厛绾?路 {suggestion.dueDate || '鏈缃埅姝?}</span>
-                  {suggestion.tags?.length > 0 && <em>{suggestion.tags.join('锛?)}</em>}
+                  <span>{priorityLabels[suggestion.priority] || '中'}优先级 · {suggestion.dueDate || '未设置截止'}</span>
+                  {suggestion.tags?.length > 0 && <em>{suggestion.tags.join('，')}</em>}
                 </div>
                 <button
                   type="button"
@@ -3893,7 +3899,7 @@ function TaskAiSuggestionPanel({ taskId, addToast }) {
                   onClick={() => createApproval(suggestion)}
                 >
                   <ShieldCheck size={14} />
-                  {requested ? '宸插姞鍏ュ鎵? : '鍔犲叆瀹℃壒'}
+                  {requested ? '已加入审批' : '加入审批'}
                 </button>
               </article>
             );
@@ -3921,7 +3927,7 @@ function LogAttachmentSummary({ attachments = [] }) {
     <div className="timeline-attachment-summary">
       <span className="timeline-attachment-label">
         <Paperclip size={13} />
-        {attachments.length} 涓檮浠?     </span>
+        {attachments.length} 个附件      </span>
       <div className="timeline-attachment-links">
         {attachments.map((attachment) => (
           <a key={attachment.id} href={attachment.downloadUrl} title={attachment.originalName}>
@@ -3946,13 +3952,13 @@ function AttachmentTextStatus({ attachment, kind, addToast, onChanged }) {
     try {
       const result = await api.reextractAttachment(kind, attachment.id);
       if (result.status === 'completed') {
-        addToast?.('success', '瀹屾垚', '闄勪欢璇嗗埆宸插畬鎴愩€?);
+        addToast?.('success', '完成', '附件识别已完成。');
       } else {
-        addToast?.('error', '鍑洪敊浜?, result.textError || '娌℃湁鎻愬彇鍒板彲鐢ㄦ枃鏈€?);
+        addToast?.('error', '出错了', result.textError || '没有提取到可用文本。');
       }
       await onChanged?.();
     } catch (err) {
-      addToast?.('error', '鍑洪敊浜?, err.message);
+      addToast?.('error', '出错了', err.message);
     } finally {
       setRunning(false);
     }
@@ -3964,7 +3970,7 @@ function AttachmentTextStatus({ attachment, kind, addToast, onChanged }) {
       {canReextractAttachment(attachment) && kind && (
         <button type="button" className="ghost-button tiny" onClick={reextract} disabled={running}>
           <RefreshCw size={12} />
-          {running ? '璇嗗埆涓? : '閲嶈瘯'}
+          {running ? '识别中' : '重试'}
         </button>
       )}
     </div>
@@ -3977,9 +3983,9 @@ function AttachmentPanel({ log, askConfirm, addToast, onChanged }) {
       <div className="attachment-head">
         <div>
           <Paperclip size={14} />
-          <span>闃舵闄勪欢</span>
+          <span>阶段附件</span>
         </div>
-        <span>{log.attachments?.length || 0} 涓枃浠?/span>
+        <span>{log.attachments?.length || 0} 个文件</span>
       </div>
       {log.attachments?.length > 0 && (
         <div className="attachment-list">
@@ -4017,24 +4023,24 @@ function AttachmentItem({ attachment, kind, askConfirm, addToast, onChanged }) {
     setSaving(true);
     try {
       await api.updateAttachment(attachment.id, { note });
-      addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('success', '完成', '操作已完成。');
       await onChanged();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     } finally {
       setSaving(false);
     }
   }
 
   async function removeAttachment() {
-    const ok = await askConfirm('纭鍒犻櫎闄勪欢', `纭畾瑕佸垹闄も€?{attachment.originalName}鈥濆悧锛熼檮浠朵細杩涘叆鍥炴敹绔欙紝鍙仮澶嶃€俙);
+    const ok = await askConfirm('确认删除附件', `确定要删除“${attachment.originalName}”吗？附件会进入回收站，可恢复。`);
     if (!ok) return;
     try {
       await api.deleteAttachment(attachment.id);
-      addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('success', '完成', '操作已完成。');
       await onChanged();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
@@ -4067,7 +4073,7 @@ function AttachmentItem({ attachment, kind, askConfirm, addToast, onChanged }) {
           <input
             value={note}
             onChange={(event) => setNote(event.target.value)}
-            placeholder="闄勪欢澶囨敞"
+            placeholder="附件备注"
           />
           <button type="button" className="ghost-button tiny" onClick={saveNote} disabled={saving}>
             <Save size={12} />
@@ -4075,10 +4081,10 @@ function AttachmentItem({ attachment, kind, askConfirm, addToast, onChanged }) {
         </div>
       </div>
       <div className="attachment-actions">
-        <a className="round-button small" href={attachment.downloadUrl} title="涓嬭浇鏂囦欢">
+        <a className="round-button small" href={attachment.downloadUrl} title="下载文件">
           <Download size={13} />
         </a>
-        <button className="round-button small" type="button" onClick={removeAttachment} title="鍒犻櫎闄勪欢">
+        <button className="round-button small" type="button" onClick={removeAttachment} title="删除附件">
           <Trash2 size={13} />
         </button>
       </div>
@@ -4095,20 +4101,20 @@ function AttachmentUpload({ logId, addToast, onUploaded, compact = false }) {
     event.preventDefault();
     const formElement = event.currentTarget;
     if (!files.length) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
       return;
     }
 
     setUploading(true);
     try {
       await api.uploadAttachments(logId, files, note);
-      addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('success', '完成', '操作已完成。');
       setFiles([]);
       setNote('');
       formElement.reset();
       await onUploaded();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     } finally {
       setUploading(false);
     }
@@ -4118,7 +4124,7 @@ function AttachmentUpload({ logId, addToast, onUploaded, compact = false }) {
     <form className={compact ? 'attachment-upload compact' : 'attachment-upload'} onSubmit={uploadFiles}>
       <label className="file-picker">
         <Upload size={15} />
-        <span>{files.length ? `宸查€夋嫨 ${files.length} 涓枃浠禶 : '涓婁紶/閲嶆柊涓婁紶鏂囦欢'}</span>
+        <span>{files.length ? `已选择 ${files.length} 个文件` : '上传/重新上传文件'}</span>
         <input
           type="file"
           multiple
@@ -4129,11 +4135,11 @@ function AttachmentUpload({ logId, addToast, onUploaded, compact = false }) {
       <input
         value={note}
         onChange={(event) => setNote(event.target.value)}
-        placeholder="鏈涓婁紶澶囨敞锛屽彲绋嶅悗鍗曠嫭淇敼"
+        placeholder="本次上传备注，可稍后单独修改"
       />
       <button className="ghost-button" disabled={uploading || !files.length}>
         <Upload size={14} />
-        淇濆瓨闄勪欢
+        保存附件
       </button>
     </form>
   );
@@ -4231,7 +4237,7 @@ function DroppableTaskItem({ task }) {
       <div className="task-item-meta">
         <span className={`status-dot ${task.status}`}></span>
         <span>{statusLabels[task.status]}</span>
-        <span>路</span>
+        <span>·</span>
         <span className="priority-label">{priorityLabels[task.priority]}</span>
       </div>
     </div>
@@ -4332,10 +4338,10 @@ function StandaloneNotesView({
       const taskId = Number(over.id.replace('task-target-', ''));
       try {
         await api.updateNote(active.id, { taskId });
-        addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+        addToast('success', '完成', '操作已完成。');
         await loadNotes(search, includeLinked);
       } catch (err) {
-        addToast('error', '鍑洪敊浜?, err.message);
+        addToast('error', '出错了', err.message);
       }
       return;
     }
@@ -4352,10 +4358,10 @@ function StandaloneNotesView({
         }));
         try {
           await api.reorderNotes(payload);
-          addToast('info', '鎻愮ず', '鎿嶄綔宸插畬鎴愩€?);
+          addToast('info', '提示', '操作已完成。');
           await loadNotes(search, includeLinked);
         } catch (err) {
-          addToast('error', '鍑洪敊浜?, err.message);
+          addToast('error', '出错了', err.message);
           await loadNotes(search, includeLinked);
         }
       }
@@ -4370,21 +4376,21 @@ function StandaloneNotesView({
   function openLinkedTask(note) {
     const task = tasks.find((item) => item.id === note.taskId);
     if (!task) {
-      addToast('info', '鎻愮ず', '鍏宠仈浠诲姟褰撳墠涓嶅湪浠诲姟鍒楄〃涓€?);
+      addToast('info', '提示', '关联任务当前不在任务列表中。');
       return;
     }
     onOpenTask?.(task, 'notes');
   }
 
   async function detachNote(note) {
-    const ok = await askConfirm('鍙栨秷浠诲姟鍏宠仈', `纭畾瑕佸皢鈥?{note.title || '鏈懡鍚嶇瑪璁?}鈥濅粠浠诲姟涓Щ鍑猴紝鍙樹负鐙珛绗旇鍚楋紵`);
+    const ok = await askConfirm('取消任务关联', `确定要将“${note.title || '未命名笔记'}”从任务中移出，变为独立笔记吗？`);
     if (!ok) return;
     try {
       await api.updateNote(note.id, { taskId: null });
-      addToast('success', '瀹屾垚', '绗旇宸插彇娑堝叧鑱斻€?);
+      addToast('success', '完成', '笔记已取消关联。');
       await loadNotes(search, includeLinked);
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
@@ -4393,12 +4399,12 @@ function StandaloneNotesView({
       <section className="standalone-notes-view">
         <div className="notes-page-head">
           <div>
-            <p className="eyebrow">鐙珛璁板綍</p>
-            <h2>绗旇</h2>
+            <p className="eyebrow">独立记录</p>
+            <h2>笔记</h2>
           </div>
           <button type="button" className="icon-button primary" onClick={focusCreateNote}>
             <Plus size={16} />
-            鍗曠嫭鍒涘缓绗旇
+            单独创建笔记
           </button>
         </div>
 
@@ -4420,23 +4426,23 @@ function StandaloneNotesView({
 
           <div className="notes-list-panel">
             <div className="section-title-row">
-              <h3>{includeLinked ? '鍏ㄩ儴绗旇' : '鍏ㄩ儴鐙珛绗旇'}</h3>
+              <h3>{includeLinked ? '全部笔记' : '全部独立笔记'}</h3>
               <span>{notes.length} </span>
             </div>
-            <div className="note-scope-tabs" role="group" aria-label="绗旇鑼冨洿">
+            <div className="note-scope-tabs" role="group" aria-label="笔记范围">
               <button
                 type="button"
                 className={!includeLinked ? 'active' : ''}
                 onClick={() => switchNoteScope(false)}
               >
-                鐙珛绗旇
+                独立笔记
               </button>
               <button
                 type="button"
                 className={includeLinked ? 'active' : ''}
                 onClick={() => switchNoteScope(true)}
               >
-                鍏ㄩ儴绗旇
+                全部笔记
               </button>
             </div>
             <div className="note-search-row">
@@ -4449,7 +4455,7 @@ function StandaloneNotesView({
                     setSearch(value);
                     await loadNotes(value, includeLinked);
                   }}
-                  placeholder="鎼滅储鏍囬銆佸唴瀹广€佸垎绫绘垨鍏宠仈浠诲姟..."
+                  placeholder="搜索标题、内容、分类或关联任务..."
                 />
               </label>
             </div>
@@ -4473,7 +4479,7 @@ function StandaloneNotesView({
                 ))}
                 {!notes.length && (
                   <div className="empty-column standalone-note-empty">
-                    {loading ? '姝ｅ湪鍔犺浇绗旇...' : '鏆傛棤鐙珛绗旇'}
+                    {loading ? '正在加载笔记...' : '暂无独立笔记'}
                   </div>
                 )}
               </div>
@@ -4483,9 +4489,9 @@ function StandaloneNotesView({
           <div className="notebook-task-sidebar">
             <h3>
               <ClipboardList size={16} />
-              <span>鎷栧姩鑷充换鍔″叧鑱?/span>
+              <span>拖动至任务关联</span>
             </h3>
-            <p className="hint">鎶婂乏渚х瑪璁版嫋鎷藉埌涓嬫柟浠诲姟涓婏紝鍗冲彲蹇€熷畬鎴愬叧鑱旓細</p>
+            <p className="hint">把左侧笔记拖拽到下方任务上，即可快速完成关联：</p>
             <div className="droppable-task-list">
               {tasks.filter(t => t.status !== 'done').map((task) => (
                 <DroppableTaskItem
@@ -4495,7 +4501,7 @@ function StandaloneNotesView({
               ))}
               {!tasks.filter(t => t.status !== 'done').length && (
                 <div className="sidebar-notes-empty">
-                  <span>鏆傛棤娲诲姩涓殑浠诲姟</span>
+                  <span>暂无活动中的任务</span>
                 </div>
               )}
             </div>
@@ -4586,10 +4592,10 @@ function NotesSection({
       }));
       try {
         await api.reorderNotes(payload);
-        addToast('info', '鎻愮ず', '鎿嶄綔宸插畬鎴愩€?);
+        addToast('info', '提示', '操作已完成。');
         await onChanged();
       } catch (err) {
-        addToast('error', '鍑洪敊浜?, err.message);
+        addToast('error', '出错了', err.message);
       }
     }
   }
@@ -4597,12 +4603,12 @@ function NotesSection({
   return (
     <section className="notes-section" ref={sectionRef}>
       <div className="section-title-row">
-        <h3>浠诲姟绗旇锛堟暣浣撹褰曪級</h3>
+        <h3>任务笔记（整体记录）</h3>
         <div className="note-title-actions">
           <span>{notes.length} </span>
           <button type="button" className="icon-button note-create-button" onClick={focusCreateNote}>
             <Plus size={14} />
-            鍒涘缓绗旇
+            创建笔记
           </button>
         </div>
       </div>
@@ -4612,7 +4618,7 @@ function NotesSection({
           <input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="鎼滅储鏍囬銆佸唴瀹广€佸垎绫绘垨鍏宠仈闄勪欢..."
+            placeholder="搜索标题、内容、分类或关联附件..."
           />
         </label>
       </div>
@@ -4645,7 +4651,7 @@ function NotesSection({
                 onCreateAiLog={onCreateAiLogFromNote ? () => onCreateAiLogFromNote(note) : null}
               />
             ))}
-            {!notes.length && <div className="empty-column">鏆傛棤绗旇</div>}
+            {!notes.length && <div className="empty-column">暂无笔记</div>}
           </div>
         </SortableContext>
         <DragOverlay dropAnimation={{ duration: 260, easing: 'cubic-bezier(.2, .9, .25, 1.2)' }}>
@@ -4676,12 +4682,12 @@ function RichNoteEditor({ value, onChange, pendingFiles, onPendingFilesChange, a
     const remainingSlots = Math.max(0, 10 - pendingFiles.length);
     const files = Array.from(fileList || []).slice(0, remainingSlots);
     if (!files.length) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
       return;
     }
 
     if (files.length < Array.from(fileList || []).length) {
-      addToast('info', '鎻愮ず', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('info', '提示', '操作已完成。');
     }
 
     const nextPending = files.map((file) => {
@@ -4689,7 +4695,7 @@ function RichNoteEditor({ value, onChange, pendingFiles, onPendingFilesChange, a
       return {
         tempId,
         file,
-        name: file.name || '绮樿创闄勪欢',
+        name: file.name || '粘贴附件',
         size: file.size || 0,
         mimeType: file.type || 'application/octet-stream',
         previewUrl: URL.createObjectURL(file),
@@ -4772,7 +4778,7 @@ function RichNoteEditor({ value, onChange, pendingFiles, onPendingFilesChange, a
           type="button"
           className={editor?.isActive('bold') ? 'active' : ''}
           onClick={() => editor?.chain().focus().toggleBold().run()}
-          title="鍔犵矖"
+          title="加粗"
         >
           B
         </button>
@@ -4780,24 +4786,24 @@ function RichNoteEditor({ value, onChange, pendingFiles, onPendingFilesChange, a
           type="button"
           className={editor?.isActive('italic') ? 'active' : ''}
           onClick={() => editor?.chain().focus().toggleItalic().run()}
-          title="鏂滀綋"
+          title="斜体"
         >
           I
         </button>
         <button
           type="button"
           onClick={() => editor?.chain().focus().toggleBulletList().run()}
-          title="椤圭洰鍒楄〃"
+          title="项目列表"
         >
-          鍒楄〃
+          列表
         </button>
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          title="涓婁紶闄勪欢"
+          title="上传附件"
         >
           <Paperclip size={14} />
-          闄勪欢
+          附件
         </button>
         <input
           ref={fileInputRef}
@@ -4811,7 +4817,7 @@ function RichNoteEditor({ value, onChange, pendingFiles, onPendingFilesChange, a
         />
       </div>
       <EditorContent editor={editor} className="rich-note-content" />
-      <div className="rich-note-hint">鍙洿鎺ョ矘璐村浘鐗囨垨鏂囦欢锛涘浘鐗囦細鏄剧ず鍦ㄦ鏂囬噷锛屾枃浠朵細鏄剧ず涓洪檮浠跺崱鐗?/div>
+      <div className="rich-note-hint">可直接粘贴图片或文件；图片会显示在正文里，文件会显示为附件卡片</div>
     </div>
   );
 }
@@ -4877,7 +4883,7 @@ function RichNoteViewer({ contentJson, fallback }) {
             ...attrs,
             isImage: true,
             previewUrl: attrs.src,
-            name: attrs.alt || attrs.title || '鍥剧墖',
+            name: attrs.alt || attrs.title || '图片',
           }}
         />
       );
@@ -4889,7 +4895,7 @@ function RichNoteViewer({ contentJson, fallback }) {
 }
 
 function RichAttachmentNode({ attachment }) {
-  const name = attachment.name || attachment.originalName || '闄勪欢';
+  const name = attachment.name || attachment.originalName || '附件';
   const href = attachment.downloadUrl || attachment.previewUrl;
   const pending = Boolean(attachment.tempId);
   if (attachment.isImage && attachment.previewUrl) {
@@ -4898,7 +4904,7 @@ function RichAttachmentNode({ attachment }) {
         <a href={attachment.previewUrl} target="_blank" rel="noreferrer">
           <img src={attachment.previewUrl} alt={name} />
         </a>
-        <figcaption>{pending ? `${name} 路 寰呬繚瀛樹笂浼燻 : name}</figcaption>
+        <figcaption>{pending ? `${name} · 待保存上传` : name}</figcaption>
       </figure>
     );
   }
@@ -4910,7 +4916,7 @@ function RichAttachmentNode({ attachment }) {
       </span>
       <span className="rich-attachment-name">{name}</span>
       <span className="rich-attachment-size">{formatFileSize(attachment.size || attachment.fileSize)}</span>
-      {pending && <span className="rich-attachment-pending">寰呬繚瀛?/span>}
+      {pending && <span className="rich-attachment-pending">待保存</span>}
     </a>
   );
 }
@@ -4948,14 +4954,14 @@ function StreamNotePreview({ text }) {
         if (heading) {
           return <h4 key={index}>{renderStreamInline(heading[2])}</h4>;
         }
-        if (markdownTitle && !/[锛?]/.test(trimmed)) {
+        if (markdownTitle && !/[：:]/.test(trimmed)) {
           const title = `${markdownTitle[1]}${markdownTitle[2] ? ` ${markdownTitle[2]}` : ''}`;
           return <h4 key={index}>{title}</h4>;
         }
 
         const bullet = trimmed.match(/^[-*]\s+(.+)$/);
         if (bullet) {
-          return <p key={index} className="stream-bullet">鈥?{renderStreamInline(bullet[1])}</p>;
+          return <p key={index} className="stream-bullet">• {renderStreamInline(bullet[1])}</p>;
         }
 
         return <p key={index}>{renderStreamInline(trimmed)}</p>;
@@ -4984,14 +4990,14 @@ function NoteAiFormatDrawer({
   return (
     <>
       <div className="drawer-overlay note-ai-format-overlay" onClick={onClose} />
-      <aside className="note-ai-format-drawer" aria-label="AI鏁寸悊绗旇纭">
+      <aside className="note-ai-format-drawer" aria-label="AI整理笔记确认">
         <div className="note-ai-format-head">
           <div>
-            <p className="eyebrow">AI 鎺掔増鏁寸悊</p>
-            <h2>纭鏁寸悊缁撴灉</h2>
-            <span>宸︿晶鏄師绗旇锛屽彸渚ф槸 AI 鏁寸悊鍚庣殑鍊欓€夊唴瀹广€傜‘璁ゅ墠涓嶄細瑕嗙洊鍘熸枃銆?/span>
+            <p className="eyebrow">AI 排版整理</p>
+            <h2>确认整理结果</h2>
+            <span>左侧是原笔记，右侧是 AI 整理后的候选内容。确认前不会覆盖原文。</span>
           </div>
-          <button type="button" className="round-button" onClick={onClose} title="鍏抽棴">
+          <button type="button" className="round-button" onClick={onClose} title="关闭">
             <X size={16} />
           </button>
         </div>
@@ -4999,7 +5005,7 @@ function NoteAiFormatDrawer({
         {loading && (
           <div className="note-ai-format-status">
             <Sparkles size={16} />
-            AI 姝ｅ湪鏁寸悊绗旇...
+            AI 正在整理笔记...
           </div>
         )}
         {error && (
@@ -5010,8 +5016,8 @@ function NoteAiFormatDrawer({
         )}
 
         <label className="note-ai-format-instruction">
-          <span>鏁寸悊鎯虫硶锛堝彲閫夛級</span>
-          <div className="note-ai-format-presets" aria-label="AI鏁寸悊棰勮">
+          <span>整理想法（可选）</span>
+          <div className="note-ai-format-presets" aria-label="AI整理预设">
             {noteFormatPresets.map((preset) => (
               <button
                 type="button"
@@ -5027,7 +5033,7 @@ function NoteAiFormatDrawer({
           <textarea
             value={instruction}
             onChange={(event) => onInstructionChange?.(event.target.value)}
-            placeholder="渚嬪锛氭寜璐﹀彿鍒嗙粍銆佹暣鐞嗘垚娓呭崟銆佹妸閿欒鐘舵€佹斁鍓嶉潰銆佸彧淇濈暀鍏抽敭瀛楁銆備笉濉垯鎸夐粯璁ゆ柟寮忔暣鐞嗐€?
+            placeholder="例如：按账号分组、整理成清单、把错误状态放前面、只保留关键字段。不填则按默认方式整理。"
             disabled={loading || applying}
             rows={3}
           />
@@ -5036,13 +5042,13 @@ function NoteAiFormatDrawer({
         <div className="note-ai-format-compare">
           <section className="note-ai-format-panel">
             <div className="note-ai-format-panel-head">
-              <span>鍘熺瑪璁?/span>
+              <span>原笔记</span>
             </div>
             <RichNoteViewer contentJson={original?.contentJson} fallback={original?.content} />
           </section>
           <section className="note-ai-format-panel result">
             <div className="note-ai-format-panel-head">
-              <span>鏁寸悊鍚?/span>
+              <span>整理后</span>
             </div>
             {hasResult ? (
               <RichNoteViewer contentJson={result.contentJson} fallback={result.content} />
@@ -5050,7 +5056,7 @@ function NoteAiFormatDrawer({
               <StreamNotePreview text={streamText} />
             ) : (
               <div className="note-ai-format-placeholder">
-                {loading ? '绛夊緟 AI 寮€濮嬭緭鍑?..' : '鏆傛棤鏁寸悊缁撴灉'}
+                {loading ? '等待 AI 开始输出...' : '暂无整理结果'}
               </div>
             )}
           </section>
@@ -5058,11 +5064,11 @@ function NoteAiFormatDrawer({
 
         <div className="note-ai-format-actions">
           <button type="button" className="ghost-button" onClick={onClose} disabled={applying}>
-            鍙栨秷
+            取消
           </button>
           <button type="button" className="ghost-button" onClick={() => onRetry?.(instruction)} disabled={loading || applying}>
             <RefreshCw size={14} />
-            {hasResult || streamText ? '閲嶆柊鏁寸悊' : '寮€濮嬫暣鐞?}
+            {hasResult || streamText ? '重新整理' : '开始整理'}
           </button>
           <button
             type="button"
@@ -5071,7 +5077,7 @@ function NoteAiFormatDrawer({
             disabled={!hasResult || loading || applying}
           >
             <Check size={14} />
-            {applying ? '姝ｅ湪搴旂敤...' : '搴旂敤鏁寸悊缁撴灉'}
+            {applying ? '正在应用...' : '应用整理结果'}
           </button>
         </div>
       </aside>
@@ -5080,9 +5086,9 @@ function NoteAiFormatDrawer({
 }
 
 const noteVersionSourceLabels = {
-  manual: '鎵嬪姩缂栬緫',
-  ai_format: 'AI 鏁寸悊',
-  restore: '鐗堟湰鍥為€€',
+  manual: '手动编辑',
+  ai_format: 'AI 整理',
+  restore: '版本回退',
 };
 
 function snapshotToPreview(snapshot) {
@@ -5112,14 +5118,14 @@ function NoteVersionDrawer({
   return (
     <>
       <div className="drawer-overlay note-version-overlay" onClick={onClose} />
-      <aside className="note-version-drawer" aria-label="绗旇鐗堟湰鍘嗗彶">
+      <aside className="note-version-drawer" aria-label="笔记版本历史">
         <div className="note-version-head">
           <div>
-            <p className="eyebrow">鐗堟湰鍘嗗彶</p>
-            <h2>{note?.title || '鏈懡鍚嶇瑪璁?}</h2>
-            <span>鏌ョ湅绗旇鍙樻洿鍓嶅悗鍐呭锛岄渶瑕佹椂鍙洖閫€鍒板彉鏇村墠鐗堟湰銆?/span>
+            <p className="eyebrow">版本历史</p>
+            <h2>{note?.title || '未命名笔记'}</h2>
+            <span>查看笔记变更前后内容，需要时可回退到变更前版本。</span>
           </div>
-          <button type="button" className="round-button" onClick={onClose} title="鍏抽棴">
+          <button type="button" className="round-button" onClick={onClose} title="关闭">
             <X size={16} />
           </button>
         </div>
@@ -5132,9 +5138,9 @@ function NoteVersionDrawer({
         )}
 
         <div className="note-version-layout">
-          <section className="note-version-list" aria-label="鐗堟湰鍒楄〃">
+          <section className="note-version-list" aria-label="版本列表">
             {loading ? (
-              <div className="empty-column">姝ｅ湪鍔犺浇鐗堟湰...</div>
+              <div className="empty-column">正在加载版本...</div>
             ) : versions.length ? (
               versions.map((version) => (
                 <button
@@ -5143,35 +5149,35 @@ function NoteVersionDrawer({
                   className={selected?.id === version.id ? 'active' : ''}
                   onClick={() => onSelect(version.id)}
                 >
-                  <strong>{noteVersionSourceLabels[version.source] || '绗旇鏇存柊'}</strong>
+                  <strong>{noteVersionSourceLabels[version.source] || '笔记更新'}</strong>
                   <span>{version.createdAt}</span>
                   {version.changeNote && <em>{version.changeNote}</em>}
                 </button>
               ))
             ) : (
-              <div className="empty-column">鏆傛棤鐗堟湰璁板綍</div>
+              <div className="empty-column">暂无版本记录</div>
             )}
           </section>
 
           <div className="note-version-preview">
             <section className="note-ai-format-panel">
               <div className="note-ai-format-panel-head">
-                <span>鍙樻洿鍓?/span>
+                <span>变更前</span>
               </div>
               {selected ? (
                 <RichNoteViewer contentJson={before.contentJson} fallback={before.content} />
               ) : (
-                <div className="note-ai-format-placeholder">閫夋嫨涓€涓増鏈煡鐪嬪唴瀹?/div>
+                <div className="note-ai-format-placeholder">选择一个版本查看内容</div>
               )}
             </section>
             <section className="note-ai-format-panel result">
               <div className="note-ai-format-panel-head">
-                <span>鍙樻洿鍚?/span>
+                <span>变更后</span>
               </div>
               {selected ? (
                 <RichNoteViewer contentJson={after.contentJson} fallback={after.content} />
               ) : (
-                <div className="note-ai-format-placeholder">閫夋嫨涓€涓増鏈煡鐪嬪唴瀹?/div>
+                <div className="note-ai-format-placeholder">选择一个版本查看内容</div>
               )}
             </section>
           </div>
@@ -5179,7 +5185,7 @@ function NoteVersionDrawer({
 
         <div className="note-ai-format-actions">
           <button type="button" className="ghost-button" onClick={onClose} disabled={restoring}>
-            鍏抽棴
+            关闭
           </button>
           <button
             type="button"
@@ -5188,7 +5194,7 @@ function NoteVersionDrawer({
             disabled={!selected || restoring}
           >
             <RefreshCw size={14} />
-            {restoring ? '姝ｅ湪鍥為€€...' : '鍥為€€鍒板彉鏇村墠'}
+            {restoring ? '正在回退...' : '回退到变更前'}
           </button>
         </div>
       </aside>
@@ -5196,7 +5202,7 @@ function NoteVersionDrawer({
   );
 }
 
-function AttachmentCardList({ attachments = [], onDelete, emptyText = '鏆傛棤闄勪欢', kind, addToast, onChanged }) {
+function AttachmentCardList({ attachments = [], onDelete, emptyText = '暂无附件', kind, addToast, onChanged }) {
   if (!attachments.length) {
     return <div className="attachment-empty">{emptyText}</div>;
   }
@@ -5230,7 +5236,7 @@ function AttachmentCardList({ attachments = [], onDelete, emptyText = '鏆傛棤
             />
           </div>
           <div className="attachment-actions">
-            <a className="round-button small" href={attachment.downloadUrl} title="涓嬭浇鏂囦欢">
+            <a className="round-button small" href={attachment.downloadUrl} title="下载文件">
               <Download size={13} />
             </a>
             {onDelete && (
@@ -5238,7 +5244,7 @@ function AttachmentCardList({ attachments = [], onDelete, emptyText = '鏆傛棤
                 className="round-button small"
                 type="button"
                 onClick={() => onDelete(attachment)}
-                title="鍒犻櫎闄勪欢"
+                title="删除附件"
               >
                 <Trash2 size={13} />
               </button>
@@ -5259,31 +5265,31 @@ function TaskAttachmentsSection({ task, attachments, askConfirm, addToast, onCha
     const files = Array.from(fileList || []);
     if (!files.length) return;
     if (files.length > 10) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
       return;
     }
 
     setUploading(true);
     try {
       await api.uploadTaskAttachments(task.id, files);
-      addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('success', '完成', '操作已完成。');
       await onChanged();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     } finally {
       setUploading(false);
     }
   }
 
   async function removeAttachment(attachment) {
-    const ok = await askConfirm('纭鍒犻櫎闄勪欢', `纭畾瑕佸垹闄も€?{attachment.originalName}鈥濆悧锛熼檮浠朵細杩涘叆鍥炴敹绔欙紝鍙仮澶嶃€俙);
+    const ok = await askConfirm('确认删除附件', `确定要删除“${attachment.originalName}”吗？附件会进入回收站，可恢复。`);
     if (!ok) return;
     try {
       await api.deleteTaskAttachment(attachment.id);
-      addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('success', '完成', '操作已完成。');
       await onChanged();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
@@ -5314,8 +5320,8 @@ function TaskAttachmentsSection({ task, attachments, askConfirm, addToast, onCha
         }}
       >
         <Paperclip size={22} />
-        <strong>{uploading ? '姝ｅ湪涓婁紶...' : '鐐瑰嚮銆佹嫋鏀炬垨绮樿创浠诲姟闄勪欢'}</strong>
-        <span>鍥剧墖鍙瑙堬紝PDF銆乄ord銆丒xcel 鍜屽帇缂╁寘浼氭樉绀轰笅杞介摼鎺?/span>
+        <strong>{uploading ? '正在上传...' : '点击、拖放或粘贴任务附件'}</strong>
+        <span>图片可预览，PDF、Word、Excel 和压缩包会显示下载链接</span>
         <input
           ref={fileInputRef}
           type="file"
@@ -5330,7 +5336,7 @@ function TaskAttachmentsSection({ task, attachments, askConfirm, addToast, onCha
       <AttachmentCardList
         attachments={attachments}
         onDelete={removeAttachment}
-        emptyText="鏆傛棤浠诲姟闄勪欢"
+        emptyText="暂无任务附件"
         kind="task"
         addToast={addToast}
         onChanged={onChanged}
@@ -5423,7 +5429,7 @@ function NoteForm({
     pendingFilesRef.current.forEach((item) => URL.revokeObjectURL(item.previewUrl));
     setPendingFiles([]);
     setAppliedAiFormat(null);
-    setDraftStatus(restoredAt ? `宸叉仮澶嶆湭鎻愪氦鑽夌 ${formatDraftTime(restoredAt)}` : '');
+    setDraftStatus(restoredAt ? `已恢复未提交草稿 ${formatDraftTime(restoredAt)}` : '');
     setDraftReady(true);
   }, [draftKey, note?.id]);
 
@@ -5459,9 +5465,9 @@ function NoteForm({
       try {
         const savedAt = new Date().toISOString();
         localStorage.setItem(draftKey, JSON.stringify({ version: 1, savedAt, form: draftForm }));
-        setDraftStatus(`鑽夌宸茶嚜鍔ㄤ繚瀛?{formatDraftTime(savedAt)}`);
+        setDraftStatus(`草稿已自动保存${formatDraftTime(savedAt)}`);
       } catch {
-        setDraftStatus('鑽夌鏃犳硶鑷姩淇濆瓨');
+        setDraftStatus('草稿无法自动保存');
       }
     }, 800);
 
@@ -5477,7 +5483,7 @@ function NoteForm({
       content: template.content,
       contentJson,
     }));
-    setDraftStatus(`宸插鐢ㄦā鏉匡細${template.label}`);
+    setDraftStatus(`已套用模板：${template.label}`);
   }
 
   function saveCurrentAsTemplate() {
@@ -5489,7 +5495,7 @@ function NoteForm({
       content: extractPlainTextFromDoc(form.contentJson) || form.content,
     });
     if (!template) {
-      addToast('error', '鍑洪敊浜?, '璇峰厛濉啓妯℃澘鍚嶇О鍜岀瑪璁板唴瀹广€?);
+      addToast('error', '出错了', '请先填写模板名称和笔记内容。');
       return;
     }
     const nextTemplates = [template, ...customNoteTemplates.filter((item) => item.label !== template.label)].slice(0, 20);
@@ -5497,20 +5503,20 @@ function NoteForm({
     saveCustomNoteTemplates(nextTemplates);
     setTemplateName('');
     setTemplateFormOpen(false);
-    setDraftStatus(`宸蹭繚瀛樻ā鏉匡細${template.label}`);
+    setDraftStatus(`已保存模板：${template.label}`);
   }
 
   function deleteCustomNoteTemplate(templateId) {
     const nextTemplates = customNoteTemplates.filter((template) => template.id !== templateId);
     setCustomNoteTemplates(nextTemplates);
     saveCustomNoteTemplates(nextTemplates);
-    setDraftStatus('鑷畾涔夋ā鏉垮凡鍒犻櫎');
+    setDraftStatus('自定义模板已删除');
   }
 
   function openFormAiFormat() {
     const payload = noteFormatPayloadFromForm(form, note);
     if (!String(payload.content || '').trim()) {
-      addToast('error', 'AI鏁寸悊澶辫触', '璇峰厛杈撳叆绗旇鍐呭銆?);
+      addToast('error', 'AI整理失败', '请先输入笔记内容。');
       return;
     }
     const original = {
@@ -5571,7 +5577,7 @@ function NoteForm({
         },
       });
       if (!finalResult) {
-        throw new Error('AI 鏁寸悊娌℃湁杩斿洖鍙敤缁撴灉銆?);
+        throw new Error('AI 整理没有返回可用结果。');
       }
     } catch (err) {
       setFormatState((current) => ({
@@ -5597,18 +5603,18 @@ function NoteForm({
     setAppliedAiFormat({
       instruction: formatState.instruction || '',
     });
-    setDraftStatus('AI鏁寸悊缁撴灉宸插簲鐢紝璇风‘璁ゅ悗淇濆瓨');
+    setDraftStatus('AI整理结果已应用，请确认后保存');
     setFormatState((current) => ({ ...current, open: false }));
   }
 
   async function submit(event) {
     event.preventDefault();
     if (!form.title.trim()) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
       return;
     }
     if (!form.content.trim()) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
       return;
     }
 
@@ -5626,19 +5632,19 @@ function NoteForm({
       if (note && appliedAiFormat) {
         payload.changeSource = 'ai_format';
         payload.changeNote = appliedAiFormat.instruction
-          ? `AI 鏁寸悊锛?{appliedAiFormat.instruction}`.slice(0, 255)
-          : 'AI 鏁寸悊';
+          ? `AI 整理：${appliedAiFormat.instruction}`.slice(0, 255)
+          : 'AI 整理';
       }
       let savedNote;
       if (note) {
         savedNote = await api.updateNote(note.id, payload);
-        addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+        addToast('success', '完成', '操作已完成。');
       } else if (task) {
         savedNote = await api.createNote(task.id, payload);
-        addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+        addToast('success', '完成', '操作已完成。');
       } else {
         savedNote = await api.createStandaloneNote(payload);
-        addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+        addToast('success', '完成', '操作已完成。');
       }
 
       if (pendingFiles.length) {
@@ -5652,7 +5658,7 @@ function NoteForm({
           content: extractPlainTextFromDoc(finalizedJson),
           contentJson: finalizedJson,
         });
-        addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+        addToast('success', '完成', '操作已完成。');
       }
 
       pendingFiles.forEach((item) => URL.revokeObjectURL(item.previewUrl));
@@ -5663,11 +5669,11 @@ function NoteForm({
       } catch {
         // The saved server record is authoritative even when browser storage is unavailable.
       }
-      setDraftStatus('绗旇宸蹭繚瀛?);
+      setDraftStatus('笔记已保存');
       setForm({ title: '', category: '', content: '', contentJson: emptyRichDoc, attachmentId: '' });
       await onSaved();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     } finally {
       setSaving(false);
     }
@@ -5679,7 +5685,7 @@ function NoteForm({
       <div className="note-form-head">
         <div className="note-form-title">
           {note ? <Edit3 size={15} /> : <Plus size={15} />}
-          <h4>{note ? '缂栬緫绗旇' : task ? '鍒涘缓浠诲姟绗旇' : '鍒涘缓鐙珛绗旇'}</h4>
+          <h4>{note ? '编辑笔记' : task ? '创建任务笔记' : '创建独立笔记'}</h4>
         </div>
         {draftStatus && (
           <span className="note-draft-status" aria-live="polite">
@@ -5691,12 +5697,13 @@ function NoteForm({
       {!note && (
         <div className="note-template-panel">
           <div className="note-template-panel-head">
-            <span>甯哥敤妯℃澘</span>
+            <span>常用模板</span>
             <button type="button" className="ghost-button tiny" onClick={() => setTemplateFormOpen((open) => !open)}>
               <Save size={12} />
-              淇濆瓨褰撳墠涓烘ā鏉?            </button>
+              保存当前为模板
+            </button>
           </div>
-          <div className="note-template-picks" aria-label="绗旇妯℃澘">
+          <div className="note-template-picks" aria-label="笔记模板">
             {availableNoteTemplates.map((template) => (
               <span className={template.custom ? 'note-template-chip custom' : 'note-template-chip'} key={template.id}>
                 <button
@@ -5710,7 +5717,7 @@ function NoteForm({
                     type="button"
                     className="note-template-delete"
                     onClick={() => deleteCustomNoteTemplate(template.id)}
-                    title="鍒犻櫎鑷畾涔夋ā鏉?
+                    title="删除自定义模板"
                   >
                     <X size={12} />
                   </button>
@@ -5723,43 +5730,43 @@ function NoteForm({
               <input
                 value={templateName}
                 onChange={(event) => setTemplateName(event.target.value)}
-                placeholder="妯℃澘鍚嶇О锛屼緥濡傦細寮€鍙疯褰?
+                placeholder="模板名称，例如：开号记录"
               />
               <button type="button" className="icon-button primary" onClick={saveCurrentAsTemplate}>
                 <Save size={13} />
-                淇濆瓨妯℃澘
+                保存模板
               </button>
             </div>
           )}
         </div>
       )}
       <label className="note-title-field">
-        鏍囬
+        标题
         <input
           ref={inputRef}
           required
           value={form.title}
           onChange={(event) => setForm({ ...form, title: event.target.value })}
-          placeholder="渚嬪锛氫細璁鐐广€佸鎴峰弽棣堛€佸緟纭浜嬮」"
+          placeholder="例如：会议要点、客户反馈、待确认事项"
         />
       </label>
       <div className="note-form-grid">
         <div className="note-category-field">
-          <label htmlFor={categoryListId}>鍒嗙被</label>
+          <label htmlFor={categoryListId}>分类</label>
           <input
             id={categoryListId}
             list={`${categoryListId}-list`}
             value={form.category}
             onChange={(event) => setForm({ ...form, category: event.target.value })}
-            placeholder="杈撳叆鏂板垎绫绘垨閫夋嫨宸叉湁鍒嗙被"
+            placeholder="输入新分类或选择已有分类"
           />
           <datalist id={`${categoryListId}-list`}>
             {categoryOptions.map((category) => (
               <option key={category} value={category} />
             ))}
           </datalist>
-          <div className="category-helper">杈撳叆鏂扮殑鍒嗙被鍚嶇О锛屼繚瀛樼瑪璁板悗浼氳嚜鍔ㄥ垱寤?/div>
-          <div className="category-picks" aria-label="宸叉湁绗旇鍒嗙被">
+          <div className="category-helper">输入新的分类名称，保存笔记后会自动创建</div>
+          <div className="category-picks" aria-label="已有笔记分类">
             {categoryOptions.slice(0, 8).map((category) => (
               <button
                 type="button"
@@ -5774,12 +5781,12 @@ function NoteForm({
         </div>
         {task ? (
           <label>
-            鍏宠仈闄勪欢
+            关联附件
             <select
               value={form.attachmentId}
               onChange={(event) => setForm({ ...form, attachmentId: event.target.value })}
             >
-              <option value="">涓嶅叧鑱旈檮</option>
+              <option value="">不关联附</option>
               {attachments.map((attachment) => (
                 <option key={attachment.id} value={attachment.id}>
                   {attachment.originalName}
@@ -5789,13 +5796,13 @@ function NoteForm({
           </label>
         ) : (
           <div className="standalone-note-scope">
-            <span>淇濆瓨浣嶇疆</span>
-            <strong>鐙珛绗旇</strong>
+            <span>保存位置</span>
+            <strong>独立笔记</strong>
           </div>
         )}
       </div>
       <div className="note-editor-field">
-        <span>绗旇鍐呭</span>
+        <span>笔记内容</span>
         <RichNoteEditor
           value={form.contentJson}
           pendingFiles={pendingFiles}
@@ -5806,7 +5813,7 @@ function NoteForm({
         {pendingFiles.length > 0 && (
           <div className="note-pending-file-warning">
             <AlertTriangle size={13} />
-            {pendingFiles.length} 涓檮浠跺皢鍦ㄧ偣鍑讳繚瀛樺悗涓婁紶
+            {pendingFiles.length} 个附件将在点击保存后上传
           </div>
         )}
       </div>
@@ -5818,17 +5825,17 @@ function NoteForm({
           disabled={saving || formatState.loading}
         >
           <Sparkles size={14} />
-          AI鏁寸悊
+          AI整理
         </button>
         {note && (
           <button type="button" className="ghost-button" onClick={onCancel}>
             <X size={14} />
-            鍙栨秷缂栬緫
+            取消编辑
           </button>
         )}
         <button className="icon-button primary" disabled={saving}>
           <Save size={15} />
-          {note ? '淇濆瓨绗旇' : '娣诲姞绗旇'}
+          {note ? '保存笔记' : '添加笔记'}
         </button>
       </div>
     </form>
@@ -5918,7 +5925,7 @@ const NoteItem = forwardRef(function NoteItem(
   function openNoteAiFormat() {
     const payload = noteFormatPayloadFromNote(note);
     if (!String(payload.content || '').trim()) {
-      addToast('error', 'AI鏁寸悊澶辫触', '杩欐潯绗旇娌℃湁鍙暣鐞嗙殑鍐呭銆?);
+      addToast('error', 'AI整理失败', '这条笔记没有可整理的内容。');
       return;
     }
     const original = {
@@ -5979,7 +5986,7 @@ const NoteItem = forwardRef(function NoteItem(
         },
       });
       if (!finalResult) {
-        throw new Error('AI 鏁寸悊娌℃湁杩斿洖鍙敤缁撴灉銆?);
+        throw new Error('AI 整理没有返回可用结果。');
       }
     } catch (err) {
       setFormatState((current) => ({
@@ -6004,50 +6011,50 @@ const NoteItem = forwardRef(function NoteItem(
         contentJson: result.contentJson,
         changeSource: 'ai_format',
         changeNote: formatState.instruction
-          ? `AI 鏁寸悊锛?{formatState.instruction}`.slice(0, 255)
-          : 'AI 鏁寸悊',
+          ? `AI 整理：${formatState.instruction}`.slice(0, 255)
+          : 'AI 整理',
       });
-      addToast('success', 'AI鏁寸悊宸插簲鐢?, '绗旇鎺掔増宸叉洿鏂般€?);
+      addToast('success', 'AI整理已应用', '笔记排版已更新。');
       setFormatState((current) => ({ ...current, open: false }));
       await onChanged();
     } catch (err) {
-      addToast('error', 'AI鏁寸悊澶辫触', err.message);
+      addToast('error', 'AI整理失败', err.message);
     } finally {
       setFormatApplying(false);
     }
   }
 
   async function removeNote() {
-    const ok = await askConfirm('纭鍒犻櫎绗旇', '纭畾瑕佸垹闄よ繖鏉＄瑪璁板悧锛熺瑪璁颁細杩涘叆鍥炴敹绔欙紝鍙仮澶嶃€?);
+    const ok = await askConfirm('确认删除笔记', '确定要删除这条笔记吗？笔记会进入回收站，可恢复。');
     if (!ok) return;
     try {
       await api.deleteNote(note.id);
-      addToast('success', '宸茬Щ鍏ュ洖鏀剁珯', '鍙湪鍥炴敹绔欐仮澶嶈繖鏉＄瑪璁般€?);
+      addToast('success', '已移入回收站', '可在回收站恢复这条笔记。');
       await onChanged();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
   async function removeNoteAttachment(attachment) {
-    const ok = await askConfirm('纭鍒犻櫎闄勪欢', `纭畾瑕佸垹闄も€?{attachment.originalName}鈥濆悧锛熼檮浠朵細杩涘叆鍥炴敹绔欙紝鍙仮澶嶃€俙);
+    const ok = await askConfirm('确认删除附件', `确定要删除“${attachment.originalName}”吗？附件会进入回收站，可恢复。`);
     if (!ok) return;
     try {
       await api.deleteNoteAttachment(attachment.id);
-      addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('success', '完成', '操作已完成。');
       await onChanged();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
   async function restoreVersion(version) {
-    const ok = await askConfirm('纭鍥為€€绗旇', `纭畾瑕佹妸鈥?{note.title || '鏈懡鍚嶇瑪璁?}鈥濆洖閫€鍒拌鐗堟湰鐨勫彉鏇村墠鍐呭鍚楋紵褰撳墠鍐呭浼氬厛淇濆瓨涓轰竴涓柊鐗堟湰銆俙);
+    const ok = await askConfirm('确认回退笔记', `确定要把“${note.title || '未命名笔记'}”回退到该版本的变更前内容吗？当前内容会先保存为一个新版本。`);
     if (!ok) return;
     setVersionState((current) => ({ ...current, restoring: true, error: '' }));
     try {
       await api.restoreNoteVersion(note.id, version.id, 'before');
-      addToast('success', '绗旇宸插洖閫€', '褰撳墠鍐呭宸插洖閫€锛屽苟淇濈暀浜嗗洖閫€鍓嶇増鏈€?);
+      addToast('success', '笔记已回退', '当前内容已回退，并保留了回退前版本。');
       setVersionState((current) => ({ ...current, open: false, restoring: false }));
       await onChanged();
     } catch (err) {
@@ -6064,9 +6071,9 @@ const NoteItem = forwardRef(function NoteItem(
     setAiLogLoading(true);
     try {
       await onCreateAiLog();
-      addToast('success', 'AI 鑽夌宸茬敓鎴?, '璇峰湪鏃ュ織椤电‘璁ゅ悗鍐嶄繚瀛樸€?);
+      addToast('success', 'AI 草稿已生成', '请在日志页确认后再保存。');
     } catch (err) {
-      addToast('error', 'AI 鐢熸垚鏃ュ織澶辫触', err.message);
+      addToast('error', 'AI 生成日志失败', err.message);
     } finally {
       setAiLogLoading(false);
     }
@@ -6088,7 +6095,7 @@ const NoteItem = forwardRef(function NoteItem(
           {dragAttributes && (
             <span
               className="note-drag-handle"
-              title="闀挎寜绗旇浠绘剰浣嶇疆鎷栧姩鎺掑簭"
+              title="长按笔记任意位置拖动排序"
               aria-hidden="true"
             >
               <GripVertical size={13} />
@@ -6101,11 +6108,11 @@ const NoteItem = forwardRef(function NoteItem(
       {note.taskId && (
         <div className="note-linked-task">
           <ClipboardList size={13} />
-          <span title={note.taskTitle || '鍏宠仈浠诲姟'}>{note.taskTitle || '鍏宠仈浠诲姟'}</span>
+          <span title={note.taskTitle || '关联任务'}>{note.taskTitle || '关联任务'}</span>
           {note.taskStatus && <em>{statusLabels[note.taskStatus] || note.taskStatus}</em>}
         </div>
       )}
-      <h4>{note.title || '鏈懡鍚嶇瑪璁?}</h4>
+      <h4>{note.title || '未命名笔记'}</h4>
       <div className="note-preview-shell">
         <RichNoteViewer contentJson={note.contentJson} fallback={note.content} />
       </div>
@@ -6138,7 +6145,7 @@ const NoteItem = forwardRef(function NoteItem(
           <a
             className="round-button small"
             href={note.attachment.downloadUrl}
-            title="涓嬭浇鍏宠仈闄勪欢"
+            title="下载关联附件"
             onPointerDown={(event) => event.stopPropagation()}
           >
             <Download size={13} />
@@ -6166,7 +6173,7 @@ const NoteItem = forwardRef(function NoteItem(
           disabled={formatState.loading || formatApplying}
         >
           <Sparkles size={13} />
-          AI鏁寸悊
+          AI整理
         </button>
         <button
           className="ghost-button"
@@ -6178,7 +6185,7 @@ const NoteItem = forwardRef(function NoteItem(
           }}
         >
           <Clock3 size={13} />
-          鍘嗗彶
+          历史
         </button>
         {note.taskId && onOpenTask && (
           <button
@@ -6191,7 +6198,7 @@ const NoteItem = forwardRef(function NoteItem(
             }}
           >
             <ExternalLink size={13} />
-            鎵撳紑浠诲姟
+            打开任务
           </button>
         )}
         {note.taskId && onCreateLog && (
@@ -6205,7 +6212,7 @@ const NoteItem = forwardRef(function NoteItem(
             }}
           >
             <ClipboardList size={13} />
-            鐢熸垚鏃ュ織
+            生成日志
           </button>
         )}
         {note.taskId && onCreateAiLog && (
@@ -6220,7 +6227,7 @@ const NoteItem = forwardRef(function NoteItem(
             disabled={aiLogLoading}
           >
             <Sparkles size={13} />
-            {aiLogLoading ? '鐢熸垚涓?..' : 'AI鐢熸垚鏃ュ織'}
+            {aiLogLoading ? '生成中...' : 'AI生成日志'}
           </button>
         )}
         {note.taskId && onDetach && (
@@ -6234,7 +6241,7 @@ const NoteItem = forwardRef(function NoteItem(
             }}
           >
             <X size={13} />
-            鍙栨秷鍏宠仈
+            取消关联
           </button>
         )}
         <button
@@ -6247,7 +6254,7 @@ const NoteItem = forwardRef(function NoteItem(
           }}
         >
           <Edit3 size={13} />
-          缂栬緫
+          编辑
         </button>
         <button
           className="danger-button"
@@ -6259,7 +6266,7 @@ const NoteItem = forwardRef(function NoteItem(
           }}
         >
           <Trash2 size={13} />
-          鍒犻櫎
+          删除
         </button>
       </div>
     </article>
@@ -6336,7 +6343,7 @@ function LogComposer({ task, seed, onCreated, addToast }) {
     setFiles([]);
     setAttachmentNote('');
     if (fileInputRef.current) fileInputRef.current.value = '';
-    setDraftStatus(restoredAt ? `宸叉仮澶嶆湭鎻愪氦鑽夌 ${formatDraftTime(restoredAt)}` : '');
+    setDraftStatus(restoredAt ? `已恢复未提交草稿 ${formatDraftTime(restoredAt)}` : '');
     setDraftReady(true);
   }, [draftKey, task.id]);
 
@@ -6348,7 +6355,7 @@ function LogComposer({ task, seed, onCreated, addToast }) {
     setFiles([]);
     setAttachmentNote('');
     if (fileInputRef.current) fileInputRef.current.value = '';
-    setDraftStatus(seed.status || '宸茬敓鎴愭棩蹇楄崏绋匡紝璇风‘璁ゅ悗璁板綍銆?);
+    setDraftStatus(seed.status || '已生成日志草稿，请确认后记录。');
   }, [seed?.id]);
 
   useEffect(() => {
@@ -6366,9 +6373,9 @@ function LogComposer({ task, seed, onCreated, addToast }) {
       try {
         const savedAt = new Date().toISOString();
         localStorage.setItem(draftKey, JSON.stringify({ version: 1, savedAt, form }));
-        setDraftStatus(`鑽夌宸茶嚜鍔ㄤ繚瀛?{formatDraftTime(savedAt)}`);
+        setDraftStatus(`草稿已自动保存${formatDraftTime(savedAt)}`);
       } catch {
-        setDraftStatus('鑽夌鏃犳硶鑷姩淇濆瓨');
+        setDraftStatus('草稿无法自动保存');
       }
     }, 800);
     return () => window.clearTimeout(timer);
@@ -6387,7 +6394,7 @@ function LogComposer({ task, seed, onCreated, addToast }) {
       progressSnapshot: form.progressSnapshot || String(progressForStatus(task.status, task.progress)),
     });
     setDetailsOpen(detailsOpen || template.detailsOpen);
-    setDraftStatus(`宸插鐢ㄣ€?{template.label}銆嶆ā鏉縛);
+    setDraftStatus(`已套用「${template.label}」模板`);
   }
 
   function addCustomTemplate() {
@@ -6400,7 +6407,7 @@ function LogComposer({ task, seed, onCreated, addToast }) {
       detailsOpen,
     });
     if (!template) {
-      addToast('error', '鍑洪敊浜?, '璇峰厛濉啓妯℃澘鍚嶇О鍜屽伐浣滃唴瀹广€?);
+      addToast('error', '出错了', '请先填写模板名称和工作内容。');
       return;
     }
     const nextTemplates = [
@@ -6411,20 +6418,20 @@ function LogComposer({ task, seed, onCreated, addToast }) {
     saveCustomLogTemplates(nextTemplates);
     setTemplateName('');
     setTemplateFormOpen(false);
-    setDraftStatus(`宸蹭繚瀛樸€?{template.label}銆嶆ā鏉縛);
+    setDraftStatus(`已保存「${template.label}」模板`);
   }
 
   function removeCustomTemplate(templateId) {
     const nextTemplates = customTemplates.filter((template) => template.id !== templateId);
     setCustomTemplates(nextTemplates);
     saveCustomLogTemplates(nextTemplates);
-    setDraftStatus('宸插垹闄よ嚜瀹氫箟妯℃澘');
+    setDraftStatus('已删除自定义模板');
   }
 
   async function submit(event) {
     event.preventDefault();
     if (!form.content.trim()) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
       return;
     }
 
@@ -6448,10 +6455,10 @@ function LogComposer({ task, seed, onCreated, addToast }) {
       setFiles([]);
       setAttachmentNote('');
       if (fileInputRef.current) fileInputRef.current.value = '';
-      setDraftStatus('鏃ュ織宸蹭繚瀛?);
+      setDraftStatus('日志已保存');
       await onCreated();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     } finally {
       setSaving(false);
     }
@@ -6461,20 +6468,20 @@ function LogComposer({ task, seed, onCreated, addToast }) {
     <form className="log-composer" onSubmit={submit}>
       <div className="log-composer-head">
         <div>
-          <h3>璁板綍鏈杩涘睍</h3>
-          <span>褰撳墠闃舵{statusLabels[task.status]} 路 褰撳墠浠诲姟杩涘害 {progressForStatus(task.status, task.progress)}%</span>
+          <h3>记录本次进展</h3>
+          <span>当前阶段{statusLabels[task.status]} · 当前任务进度 {progressForStatus(task.status, task.progress)}%</span>
         </div>
         {draftStatus && <span className="note-draft-status" aria-live="polite"><Clock3 size={13} />{draftStatus}</span>}
       </div>
       <div className="log-template-row">
-        <span>甯哥敤妯℃澘</span>
-        <div className="log-template-picks" aria-label="鏃ュ織妯℃澘">
+        <span>常用模板</span>
+        <div className="log-template-picks" aria-label="日志模板">
           {availableTemplates.map((template) => (
             <span className="log-template-chip" key={template.id}>
               <button
                 type="button"
                 onClick={() => applyLogTemplate(template)}
-                title={template.custom ? '鑷畾涔夋ā鏉? : '榛樿妯℃澘'}
+                title={template.custom ? '自定义模板' : '默认模板'}
               >
                 {template.label}
               </button>
@@ -6483,7 +6490,7 @@ function LogComposer({ task, seed, onCreated, addToast }) {
                   type="button"
                   className="log-template-delete"
                   onClick={() => removeCustomTemplate(template.id)}
-                  title="鍒犻櫎鑷畾涔夋ā鏉?
+                  title="删除自定义模板"
                 >
                   <X size={12} />
                 </button>
@@ -6496,17 +6503,18 @@ function LogComposer({ task, seed, onCreated, addToast }) {
             onClick={() => setTemplateFormOpen(!templateFormOpen)}
           >
             <Save size={13} />
-            淇濆瓨褰撳墠涓烘ā鏉?          </button>
+            保存当前为模板
+          </button>
         </div>
         {templateFormOpen && (
           <div className="log-template-save-row">
             <input
               value={templateName}
               onChange={(event) => setTemplateName(event.target.value)}
-              placeholder="妯℃澘鍚嶇О锛屼緥濡傦細瀹㈡埛鍥炶"
+              placeholder="模板名称，例如：客户回访"
             />
             <button type="button" className="primary-button" onClick={addCustomTemplate}>
-              淇濆瓨妯℃澘
+              保存模板
             </button>
             <button
               type="button"
@@ -6516,25 +6524,25 @@ function LogComposer({ task, seed, onCreated, addToast }) {
                 setTemplateName('');
               }}
             >
-              鍙栨秷
+              取消
             </button>
           </div>
         )}
       </div>
       <label className="log-content-field">
-        <span>宸ヤ綔鍐呭</span>
+        <span>工作内容</span>
         <textarea
           required
           value={form.content}
           onChange={(event) => setForm({ ...form, content: event.target.value })}
-          placeholder="璁板綍鏈瀹屾垚鐨勪簨鎯呫€佹矡閫氱粨鏋溿€佸鐞嗚繃绋嬫垨闃舵缁撹"
+          placeholder="记录本次完成的事情、沟通结果、处理过程或阶段结论"
         />
       </label>
       {inferredNextStep && (
         <div className="log-next-suggestion">
           <div>
             <Sparkles size={14} />
-            <span>璇嗗埆鍒板彲鑳界殑涓嬩竴姝?/span>
+            <span>识别到可能的下一步</span>
           </div>
           <p>{inferredNextStep}</p>
           <button
@@ -6543,26 +6551,27 @@ function LogComposer({ task, seed, onCreated, addToast }) {
             onClick={() => {
               setForm({ ...form, nextStep: inferredNextStep });
               setDetailsOpen(true);
-              setDraftStatus('宸插～鍏ヤ笅涓€姝ヨ鍒掞紝璁板綍鍚庡彲鍦ㄦ椂闂寸嚎杞负浠诲姟銆?);
+              setDraftStatus('已填入下一步计划，记录后可在时间线转为任务。');
             }}
           >
-            濉叆涓嬩竴姝ヨ鍒?          </button>
+            填入下一步计划
+          </button>
         </div>
       )}
       <div className="log-quick-fields">
         <label>
-          <span>鑰楁椂锛堝皬鏃讹級</span>
+          <span>耗时（小时）</span>
           <input
             type="number"
             min="0"
             step="0.25"
             value={form.hours}
             onChange={(event) => setForm({ ...form, hours: event.target.value })}
-            placeholder="渚嬪 1.5"
+            placeholder="例如 1.5"
           />
         </label>
         <label>
-          <span>褰撴椂杩涘害</span>
+          <span>当时进度</span>
           <div className="log-progress-input">
             <input
               type="number"
@@ -6575,7 +6584,7 @@ function LogComposer({ task, seed, onCreated, addToast }) {
           </div>
         </label>
       </div>
-      <div className="log-progress-presets" aria-label="杩涘害蹇嵎璁剧疆">
+      <div className="log-progress-presets" aria-label="进度快捷设置">
         {[0, 25, 50, 75, 100].map((value) => (
           <button
             type="button"
@@ -6589,13 +6598,13 @@ function LogComposer({ task, seed, onCreated, addToast }) {
       </div>
       <button type="button" className="log-details-toggle" onClick={() => setDetailsOpen(!detailsOpen)}>
         {detailsOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-        {detailsOpen ? '鏀惰捣琛ュ厖璇︽儏' : '琛ュ厖鏃ユ湡銆佷笅涓€姝ュ拰闄勪欢'}
+        {detailsOpen ? '收起补充详情' : '补充日期、下一步和附件'}
       </button>
       {detailsOpen && (
         <div className="log-extra-fields">
           <div className="form-grid">
             <label>
-              鏃ユ湡
+              日期
               <input
                 type="date"
                 value={form.logDate}
@@ -6603,23 +6612,24 @@ function LogComposer({ task, seed, onCreated, addToast }) {
               />
             </label>
             <label>
-              璁板綍闃舵
+              记录阶段
               <select value={form.stage} onChange={(event) => setForm({ ...form, stage: event.target.value })}>
                 {columnStatuses.map((status) => <option value={status} key={status}>{statusLabels[status]}</option>)}
               </select>
             </label>
           </div>
           <label>
-            涓嬩竴姝ヨ鍒?            <input
+            下一步计划
+            <input
               value={form.nextStep}
               onChange={(event) => setForm({ ...form, nextStep: event.target.value })}
-              placeholder="涓嬩竴姝ヨ缁х画澶勭悊浠€涔?
+              placeholder="下一步要继续处理什么"
             />
           </label>
           <div className="log-attachment-fields">
             <label className="file-picker">
               <Upload size={15} />
-              <span>{files.length ? `宸查€夋嫨 ${files.length} 涓檮浠禶 : '閫夋嫨鏈樁娈靛浘鐗囨垨鏂囦欢'}</span>
+              <span>{files.length ? `已选择 ${files.length} 个附件` : '选择本阶段图片或文件'}</span>
               <input
                 ref={fileInputRef}
                 type="file"
@@ -6631,17 +6641,17 @@ function LogComposer({ task, seed, onCreated, addToast }) {
             <input
               value={attachmentNote}
               onChange={(event) => setAttachmentNote(event.target.value)}
-              placeholder="闄勪欢澶囨敞锛屼緥濡傦細鍚堝悓鎵弿浠躲€佸鎴锋埅鍥俱€侀樁娈佃祫鏂?
+              placeholder="附件备注，例如：合同扫描件、客户截图、阶段资料"
             />
           </div>
           {files.length > 0 && (
-            <div className="note-pending-file-warning"><AlertTriangle size={13} />{files.length} 涓檮浠跺皢鍦ㄦ彁浜ゆ棩蹇楀悗涓婁紶</div>
+            <div className="note-pending-file-warning"><AlertTriangle size={13} />{files.length} 个附件将在提交日志后上传</div>
           )}
         </div>
       )}
       <button className="icon-button primary full" disabled={saving}>
         <Plus size={16} />
-        {saving ? '姝ｅ湪璁板綍...' : '璁板綍鏃ュ織'}
+        {saving ? '正在记录...' : '记录日志'}
       </button>
     </form>
   );
@@ -6653,17 +6663,17 @@ function LogSnapshotPreview({ title, snapshot }) {
     <div className="log-version-snapshot">
       <strong>{title}</strong>
       <dl>
-        <dt>鏃ユ湡</dt>
+        <dt>日期</dt>
         <dd>{snapshot.logDate || '-'}</dd>
-        <dt>闃舵</dt>
+        <dt>阶段</dt>
         <dd>{statusLabels[snapshot.stage] || snapshot.stage || '-'}</dd>
-        <dt>鑰楁椂</dt>
+        <dt>耗时</dt>
         <dd>{Number(snapshot.hours || 0)}h</dd>
-        <dt>杩涘害</dt>
+        <dt>进度</dt>
         <dd>{Number(snapshot.progressSnapshot || 0)}%</dd>
       </dl>
-      <p>{snapshot.content || '鏃犲唴瀹?}</p>
-      {snapshot.nextStep && <em>涓嬩竴姝ワ細{snapshot.nextStep}</em>}
+      <p>{snapshot.content || '无内容'}</p>
+      {snapshot.nextStep && <em>下一步：{snapshot.nextStep}</em>}
     </div>
   );
 }
@@ -6673,28 +6683,28 @@ function LogVersionHistory({ versions, loading, error, onRefresh }) {
     <section className="log-version-history">
       <div className="section-title-row">
         <div>
-          <span>缂栬緫鍘嗗彶</span>
-          <h3>淇敼鍓嶅悗璁板綍</h3>
+          <span>编辑历史</span>
+          <h3>修改前后记录</h3>
         </div>
-        <button type="button" className="round-button small" onClick={onRefresh} title="鍒锋柊鍘嗗彶">
+        <button type="button" className="round-button small" onClick={onRefresh} title="刷新历史">
           <RefreshCw size={13} />
         </button>
       </div>
-      {loading && <div className="empty-column">姝ｅ湪鍔犺浇缂栬緫鍘嗗彶...</div>}
+      {loading && <div className="empty-column">正在加载编辑历史...</div>}
       {error && <div className="notice">{error}</div>}
       {!loading && !error && !versions.length && (
-        <div className="empty-column">鏆傛棤缂栬緫鍘嗗彶</div>
+        <div className="empty-column">暂无编辑历史</div>
       )}
       {!loading && !error && versions.map((version, index) => (
         <details className="log-version-item" key={version.id} open={index === 0}>
           <summary>
             <span>{version.createdAt}</span>
-            <em>{version.source === 'ai_format' ? 'AI 鏁寸悊' : version.source === 'restore' ? '鍥為€€' : '鎵嬪姩缂栬緫'}</em>
+            <em>{version.source === 'ai_format' ? 'AI 整理' : version.source === 'restore' ? '回退' : '手动编辑'}</em>
           </summary>
           {version.changeNote && <p className="log-version-note">{version.changeNote}</p>}
           <div className="log-version-snapshots">
-            <LogSnapshotPreview title="淇敼鍓? snapshot={version.before} />
-            <LogSnapshotPreview title="淇敼鍚? snapshot={version.after} />
+            <LogSnapshotPreview title="修改前" snapshot={version.before} />
+            <LogSnapshotPreview title="修改后" snapshot={version.after} />
           </div>
         </details>
       ))}
@@ -6747,7 +6757,7 @@ function LogEditDrawer({ task, log, askConfirm, addToast, onClose, onChanged }) 
     setCurrentLog(log);
     setForm(next);
     setSavedForm(initial);
-    setDraftStatus(restoredAt ? `宸叉仮澶嶆湭淇濆瓨淇敼 ${formatDraftTime(restoredAt)}` : '');
+    setDraftStatus(restoredAt ? `已恢复未保存修改 ${formatDraftTime(restoredAt)}` : '');
     setDraftReady(true);
   }, [draftKey, log.id]);
 
@@ -6770,9 +6780,9 @@ function LogEditDrawer({ task, log, askConfirm, addToast, onClose, onChanged }) 
       try {
         const savedAt = new Date().toISOString();
         localStorage.setItem(draftKey, JSON.stringify({ version: 1, savedAt, form }));
-        setDraftStatus(`淇敼鑽夌宸蹭繚瀛?${formatDraftTime(savedAt)}`);
+        setDraftStatus(`修改草稿已保存 ${formatDraftTime(savedAt)}`);
       } catch {
-        setDraftStatus('鑽夌鏃犳硶鑷姩淇濆瓨');
+        setDraftStatus('草稿无法自动保存');
       }
     }, 800);
     return () => window.clearTimeout(timer);
@@ -6781,7 +6791,7 @@ function LogEditDrawer({ task, log, askConfirm, addToast, onClose, onChanged }) 
   async function saveLog(event) {
     event.preventDefault();
     if (!form.content.trim()) {
-      addToast('error', '鍑洪敊浜?, '鎿嶄綔澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      addToast('error', '出错了', '操作失败，请稍后重试。');
       return;
     }
     setSaving(true);
@@ -6798,12 +6808,12 @@ function LogEditDrawer({ task, log, askConfirm, addToast, onClose, onChanged }) 
       } catch {
         // The saved API record is authoritative.
       }
-      setDraftStatus('淇敼宸蹭繚瀛?);
+      setDraftStatus('修改已保存');
       await onChanged();
       await loadLogVersions();
-      addToast('success', '瀹屾垚', '鎿嶄綔宸插畬鎴愩€?);
+      addToast('success', '完成', '操作已完成。');
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     } finally {
       setSaving(false);
     }
@@ -6816,21 +6826,21 @@ function LogEditDrawer({ task, log, askConfirm, addToast, onClose, onChanged }) 
       if (refreshed) setCurrentLog(refreshed);
       await onChanged();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
   return (
     <>
       <div className="log-editor-overlay" onClick={onClose} />
-      <aside className="log-editor-drawer" aria-label="缂栬緫宸ヤ綔鏃ュ織">
+      <aside className="log-editor-drawer" aria-label="编辑工作日志">
         <div className="log-editor-head">
           <div>
             <span className={`stage-pill ${currentLog.stage}`}>{statusLabels[currentLog.stage]}</span>
-            <h2>缂栬緫宸ヤ綔鏃ュ織</h2>
-            <p>淇敼鍘嗗彶璁板綍涓嶄細鏀瑰彉浠诲姟褰撳墠杩涘害</p>
+            <h2>编辑工作日志</h2>
+            <p>修改历史记录不会改变任务当前进度</p>
           </div>
-          <button className="round-button small" type="button" onClick={onClose} title="鍏抽棴缂栬緫">
+          <button className="round-button small" type="button" onClick={onClose} title="关闭编辑">
             <X size={16} />
           </button>
         </div>
@@ -6838,39 +6848,40 @@ function LogEditDrawer({ task, log, askConfirm, addToast, onClose, onChanged }) 
           {draftStatus && <span className="note-draft-status" aria-live="polite"><Clock3 size={13} />{draftStatus}</span>}
           <div className="form-grid">
             <label>
-              鏃ユ湡
+              日期
               <input type="date" value={form.logDate} onChange={(event) => setForm({ ...form, logDate: event.target.value })} />
             </label>
             <label>
-              闃舵
+              阶段
               <select value={form.stage} onChange={(event) => setForm({ ...form, stage: event.target.value })}>
                 {columnStatuses.map((status) => <option value={status} key={status}>{statusLabels[status]}</option>)}
               </select>
             </label>
           </div>
           <label>
-            宸ヤ綔鍐呭
+            工作内容
             <textarea required value={form.content} onChange={(event) => setForm({ ...form, content: event.target.value })} />
           </label>
           <div className="form-grid">
             <label>
-              鑰楁椂锛堝皬鏃讹級
+              耗时（小时）
               <input type="number" min="0" step="0.25" value={form.hours} onChange={(event) => setForm({ ...form, hours: event.target.value })} />
             </label>
             <label>
-              褰撴椂杩涘害锛?input type="number" min="0" max="100" value={form.progressSnapshot} onChange={(event) => setForm({ ...form, progressSnapshot: event.target.value })} />
+              当时进度：<input type="number" min="0" max="100" value={form.progressSnapshot} onChange={(event) => setForm({ ...form, progressSnapshot: event.target.value })} />
             </label>
           </div>
           <label>
-            涓嬩竴姝ヨ鍒?            <input
+            下一步计划
+            <input
               value={form.nextStep}
               onChange={(event) => setForm({ ...form, nextStep: event.target.value })}
-              placeholder="涓嬩竴姝ヨ缁х画澶勭悊浠€涔?
+              placeholder="下一步要继续处理什么"
             />
           </label>
           <div className="log-edit-actions">
-            <button className="ghost-button" type="button" onClick={onClose}><ChevronLeft size={15} />鍏抽棴</button>
-            <button className="icon-button primary" disabled={saving}><Save size={15} />{saving ? '淇濆瓨涓?..' : '淇濆瓨淇敼'}</button>
+            <button className="ghost-button" type="button" onClick={onClose}><ChevronLeft size={15} />关闭</button>
+            <button className="icon-button primary" disabled={saving}><Save size={15} />{saving ? '保存中...' : '保存修改'}</button>
           </div>
         </form>
         <LogVersionHistory
@@ -6882,10 +6893,10 @@ function LogEditDrawer({ task, log, askConfirm, addToast, onClose, onChanged }) 
         <section className="log-editor-attachments">
           <div className="section-title-row">
             <div>
-              <span>闄勪欢</span>
-              <h3>闃舵鏂囦欢涓庡娉?/h3>
+              <span>附件</span>
+              <h3>阶段文件与备注</h3>
             </div>
-            <span>{currentLog.attachments?.length || 0} 涓?/span>
+            <span>{currentLog.attachments?.length || 0} 个</span>
           </div>
           <AttachmentPanel log={currentLog} askConfirm={askConfirm} addToast={addToast} onChanged={refreshAttachments} />
         </section>
@@ -6924,11 +6935,11 @@ function SystemView({ addToast }) {
     setVerifyResult(null);
     try {
       const result = await api.createBackup();
-      addToast?.('success', '澶囦唤瀹屾垚', `宸插垱寤哄浠斤細${result.backupDir}`);
+      addToast?.('success', '备份完成', `已创建备份：${result.backupDir}`);
       await loadBackups();
     } catch (err) {
       setError(err.message);
-      addToast?.('error', '鍑洪敊浜?, err.message);
+      addToast?.('error', '出错了', err.message);
     } finally {
       setBusy('');
     }
@@ -6941,13 +6952,13 @@ function SystemView({ addToast }) {
       const result = await api.verifyBackup(backups[0]?.backupDir || '');
       setVerifyResult(result);
       if (result.status === 'ok') {
-        addToast?.('success', '鏍￠獙閫氳繃', '鏈€杩戝浠芥枃浠跺畬鏁淬€?);
+        addToast?.('success', '校验通过', '最近备份文件完整。');
       } else {
-        addToast?.('error', '鏍￠獙鏈€氳繃', `鍙戠幇 ${result.problems?.length || 0} 涓棶棰樸€俙);
+        addToast?.('error', '校验未通过', `发现 ${result.problems?.length || 0} 个问题。`);
       }
     } catch (err) {
       setError(err.message);
-      addToast?.('error', '鍑洪敊浜?, err.message);
+      addToast?.('error', '出错了', err.message);
     } finally {
       setBusy('');
     }
@@ -6957,42 +6968,42 @@ function SystemView({ addToast }) {
     <section className="system-page">
       <div className="system-head">
         <div>
-          <span>鏁版嵁瀹夊叏</span>
-          <h2>绯荤粺涓庡浠?/h2>
-          <p>澶囦唤浼氬鍑?MySQL 鏍稿績琛ㄥ苟澶嶅埗 uploads 鏂囦欢锛涙仮澶嶄粛璇蜂娇鐢ㄥ懡浠よ棰勬紨纭鍚庢墽琛屻€?/p>
+          <span>数据安全</span>
+          <h2>系统与备份</h2>
+          <p>备份会导出 MySQL 核心表并复制 uploads 文件；恢复仍请使用命令行预演确认后执行。</p>
         </div>
         <div className="system-actions">
           <button type="button" className="ghost-button" onClick={loadBackups} disabled={loading || Boolean(busy)}>
             <RefreshCw size={15} />
-            鍒锋柊
+            刷新
           </button>
           <button type="button" className="ghost-button" onClick={verifyLatest} disabled={loading || Boolean(busy) || !backups.length}>
             <ShieldCheck size={15} />
-            {busy === 'verify' ? '鏍￠獙涓?..' : '鏍￠獙鏈€杩戝浠?}
+            {busy === 'verify' ? '校验中...' : '校验最近备份'}
           </button>
           <button type="button" className="icon-button primary" onClick={createBackupNow} disabled={Boolean(busy)}>
             <Save size={15} />
-            {busy === 'create' ? '澶囦唤涓?..' : '鍒涘缓澶囦唤'}
+            {busy === 'create' ? '备份中...' : '创建备份'}
           </button>
         </div>
       </div>
       {error && <div className="notice">{error}</div>}
       {verifyResult && (
         <div className={verifyResult.status === 'ok' ? 'system-verify ok' : 'system-verify error'}>
-          <strong>{verifyResult.status === 'ok' ? '澶囦唤鏍￠獙閫氳繃' : '澶囦唤鏍￠獙鍙戠幇闂'}</strong>
-          <span>妫€鏌ユ枃浠?{verifyResult.checkedFiles || 0} 涓?路 闂 {verifyResult.problems?.length || 0} 涓?/span>
+          <strong>{verifyResult.status === 'ok' ? '备份校验通过' : '备份校验发现问题'}</strong>
+          <span>检查文件 {verifyResult.checkedFiles || 0} 个 · 问题 {verifyResult.problems?.length || 0} 个</span>
           {verifyResult.problems?.length > 0 && (
             <ul>
               {verifyResult.problems.slice(0, 6).map((item) => (
-                <li key={item.path}>{item.path}锛歿item.reason}</li>
+                <li key={item.path}>{item.path}：{item.reason}</li>
               ))}
             </ul>
           )}
         </div>
       )}
       <div className="backup-list">
-        {loading && <div className="empty-column">姝ｅ湪鍔犺浇澶囦唤鍒楄〃</div>}
-        {!loading && !backups.length && <div className="empty-column">鏆傛棤澶囦唤锛屽缓璁厛鍒涘缓涓€娆″浠姐€?/div>}
+        {loading && <div className="empty-column">正在加载备份列表</div>}
+        {!loading && !backups.length && <div className="empty-column">暂无备份，建议先创建一次备份。</div>}
         {backups.map((backup) => {
           const totalRows = (backup.tables || []).reduce((sum, item) => sum + Number(item.rows || 0), 0);
           return (
@@ -7003,19 +7014,19 @@ function SystemView({ addToast }) {
               </div>
               <dl>
                 <div>
-                  <dt>鏁版嵁琛?/dt>
-                  <dd>{backup.tables?.length || 0} 寮?路 {totalRows} 琛?/dd>
+                  <dt>数据表</dt>
+                  <dd>{backup.tables?.length || 0} 张 · {totalRows} 行</dd>
                 </div>
                 <div>
-                  <dt>闄勪欢</dt>
-                  <dd>{backup.uploads?.count || 0} 涓?路 {formatFileSize(backup.uploads?.totalBytes || 0)}</dd>
+                  <dt>附件</dt>
+                  <dd>{backup.uploads?.count || 0} 个 · {formatFileSize(backup.uploads?.totalBytes || 0)}</dd>
                 </div>
                 <div>
-                  <dt>鏍￠獙鏂囦欢</dt>
-                  <dd>{backup.files || 0} 涓?/dd>
+                  <dt>校验文件</dt>
+                  <dd>{backup.files || 0} 个</dd>
                 </div>
                 <div>
-                  <dt>鐩綍</dt>
+                  <dt>目录</dt>
                   <dd>{backup.backupDir}</dd>
                 </div>
               </dl>
@@ -7027,10 +7038,460 @@ function SystemView({ addToast }) {
   );
 }
 
+function SettingsView({ addToast, askConfirm }) {
+  const emptyAiForm = {
+    indexingEnabled: false,
+    litellmBaseUrl: '',
+    litellmApiKey: '',
+    litellmChatModel: '',
+    litellmEmbeddingModel: '',
+    qdrantUrl: '',
+    qdrantApiKey: '',
+    qdrantCollection: 'assistant_task_board',
+    ocrBaseUrl: '',
+    ocrApiKey: '',
+    ocrModel: '',
+    ocrMaxPdfPages: 20,
+    ocrMinTextChars: 80,
+  };
+  const [settings, setSettings] = useState(null);
+  const [aiForm, setAiForm] = useState(emptyAiForm);
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
+  const [updateBranch, setUpdateBranch] = useState('main');
+  const [updateStatus, setUpdateStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+
+  function applySettings(data) {
+    setSettings(data);
+    setUpdateStatus(data.update || null);
+    setUpdateBranch(data.update?.branch || 'main');
+    setAiForm({
+      indexingEnabled: Boolean(data.ai?.indexingEnabled),
+      litellmBaseUrl: data.ai?.litellm?.baseUrl || '',
+      litellmApiKey: '',
+      litellmChatModel: data.ai?.litellm?.chatModel || '',
+      litellmEmbeddingModel: data.ai?.litellm?.embeddingModel || '',
+      qdrantUrl: data.ai?.qdrant?.url || '',
+      qdrantApiKey: '',
+      qdrantCollection: data.ai?.qdrant?.collection || 'assistant_task_board',
+      ocrBaseUrl: data.ai?.ocr?.baseUrl || '',
+      ocrApiKey: '',
+      ocrModel: data.ai?.ocr?.model || '',
+      ocrMaxPdfPages: data.ai?.ocr?.maxPdfPages || 20,
+      ocrMinTextChars: data.ai?.ocr?.minTextChars || 80,
+    });
+  }
+
+  async function loadSettings() {
+    setLoading(true);
+    setError('');
+    try {
+      applySettings(await api.getSettings());
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function refreshUpdateStatus() {
+    try {
+      const status = await api.getOnlineUpdateStatus();
+      setUpdateStatus(status);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  useEffect(() => {
+    loadSettings();
+  }, []);
+
+  useEffect(() => {
+    if (!updateStatus?.running) return undefined;
+    const timer = window.setInterval(refreshUpdateStatus, 1800);
+    return () => window.clearInterval(timer);
+  }, [updateStatus?.running]);
+
+  function updateAiField(field, value) {
+    setAiForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function secretHint(secret) {
+    if (!secret?.configured) return '当前未配置。';
+    return `当前已配置：${secret.preview}。留空保持原值。`;
+  }
+
+  async function saveAiConfig(event) {
+    event.preventDefault();
+    setBusy('ai-save');
+    setError('');
+    try {
+      const result = await api.updateAiSettings(aiForm);
+      setSettings((current) => ({ ...current, ai: result.ai }));
+      setAiForm((current) => ({
+        ...current,
+        litellmApiKey: '',
+        ocrApiKey: '',
+        qdrantApiKey: '',
+      }));
+      addToast?.('success', 'AI 配置已保存', '新配置已写入服务器 .env，新的请求会使用最新配置。');
+    } catch (err) {
+      setError(err.message);
+      addToast?.('error', '保存失败', err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function testAiConfig() {
+    setBusy('ai-test');
+    setError('');
+    try {
+      const result = await api.testAiSettings({
+        baseUrl: aiForm.litellmBaseUrl,
+        apiKey: aiForm.litellmApiKey,
+        model: aiForm.litellmChatModel,
+      });
+      addToast?.('success', 'AI 连接正常', `响应耗时 ${result.elapsedMs || 0}ms。`);
+    } catch (err) {
+      setError(err.message);
+      addToast?.('error', 'AI 连接失败', err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function savePassword(event) {
+    event.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      addToast?.('error', '密码不一致', '两次输入的新密码不一致。');
+      return;
+    }
+    setBusy('password');
+    setError('');
+    try {
+      await api.updatePassword({
+        currentPassword: passwordForm.currentPassword,
+        newPassword: passwordForm.newPassword,
+      });
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      addToast?.('success', '访问密码已修改', '下次登录请使用新密码。');
+    } catch (err) {
+      setError(err.message);
+      addToast?.('error', '修改失败', err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function startUpdate() {
+    const confirmed = askConfirm
+      ? await askConfirm(
+          '确认在线更新',
+          '系统会从 GitHub 拉取 main 分支、安装依赖并重新构建。服务器环境下完成后会尝试重启 PM2 服务。',
+        )
+      : window.confirm('确认从 GitHub 在线更新吗？');
+    if (!confirmed) return;
+
+    setBusy('online-update');
+    setError('');
+    try {
+      const status = await api.startOnlineUpdate({ branch: updateBranch || 'main' });
+      setUpdateStatus(status);
+      addToast?.('info', '在线更新已开始', '可以在下方查看更新日志。');
+    } catch (err) {
+      setError(err.message);
+      addToast?.('error', '启动更新失败', err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  const updateTone = updateStatus?.status === 'completed'
+    ? 'ok'
+    : updateStatus?.status === 'failed'
+      ? 'error'
+      : updateStatus?.running
+        ? 'running'
+        : 'idle';
+
+  return (
+    <section className="settings-page">
+      <div className="settings-hero">
+        <div>
+          <span>配置中心</span>
+          <h2>设置</h2>
+          <p>管理 AI 网关、访问密码、GitHub 在线更新和本地备份。敏感配置只保存在服务器 .env，不会下发到前端。</p>
+        </div>
+        <button type="button" className="ghost-button" onClick={loadSettings} disabled={loading || Boolean(busy)}>
+          <RefreshCw size={15} />
+          {loading ? '刷新中...' : '刷新'}
+        </button>
+      </div>
+
+      {error && <div className="notice">{error}</div>}
+      {loading && <div className="empty-column">正在加载设置...</div>}
+
+      {!loading && (
+        <>
+          <div className="settings-grid">
+            <section className="settings-card settings-card-wide">
+              <div className="settings-card-head">
+                <div>
+                  <span>AI</span>
+                  <h3>大模型与检索配置</h3>
+                </div>
+                <span className={settings?.ai?.litellm?.apiKey?.configured ? 'settings-status-pill ok' : 'settings-status-pill warning'}>
+                  {settings?.ai?.litellm?.apiKey?.configured ? '已配置' : '未配置'}
+                </span>
+              </div>
+              <form className="settings-form-grid" onSubmit={saveAiConfig}>
+                <label>
+                  <span>LiteLLM Base URL</span>
+                  <input
+                    value={aiForm.litellmBaseUrl}
+                    onChange={(event) => updateAiField('litellmBaseUrl', event.target.value)}
+                    placeholder="https://example.com/v1"
+                  />
+                </label>
+                <label>
+                  <span>LiteLLM API Key</span>
+                  <input
+                    type="password"
+                    value={aiForm.litellmApiKey}
+                    onChange={(event) => updateAiField('litellmApiKey', event.target.value)}
+                    placeholder="留空保持原值"
+                    autoComplete="new-password"
+                  />
+                  <em>{secretHint(settings?.ai?.litellm?.apiKey)}</em>
+                </label>
+                <label>
+                  <span>聊天模型</span>
+                  <input
+                    value={aiForm.litellmChatModel}
+                    onChange={(event) => updateAiField('litellmChatModel', event.target.value)}
+                    placeholder="mimo-v2.5-pro"
+                  />
+                </label>
+                <label>
+                  <span>Embedding 模型</span>
+                  <input
+                    value={aiForm.litellmEmbeddingModel}
+                    onChange={(event) => updateAiField('litellmEmbeddingModel', event.target.value)}
+                    placeholder="embedding model"
+                  />
+                </label>
+                <label className="settings-toggle">
+                  <input
+                    type="checkbox"
+                    checked={aiForm.indexingEnabled}
+                    onChange={(event) => updateAiField('indexingEnabled', event.target.checked)}
+                  />
+                  <span>启用向量索引 Worker</span>
+                </label>
+                <label>
+                  <span>Qdrant URL</span>
+                  <input
+                    value={aiForm.qdrantUrl}
+                    onChange={(event) => updateAiField('qdrantUrl', event.target.value)}
+                    placeholder="http://127.0.0.1:6333"
+                  />
+                </label>
+                <label>
+                  <span>Qdrant API Key</span>
+                  <input
+                    type="password"
+                    value={aiForm.qdrantApiKey}
+                    onChange={(event) => updateAiField('qdrantApiKey', event.target.value)}
+                    placeholder="留空保持原值"
+                    autoComplete="new-password"
+                  />
+                  <em>{secretHint(settings?.ai?.qdrant?.apiKey)}</em>
+                </label>
+                <label>
+                  <span>Qdrant Collection</span>
+                  <input
+                    value={aiForm.qdrantCollection}
+                    onChange={(event) => updateAiField('qdrantCollection', event.target.value)}
+                    placeholder="assistant_task_board"
+                  />
+                </label>
+                <label>
+                  <span>OCR Base URL</span>
+                  <input
+                    value={aiForm.ocrBaseUrl}
+                    onChange={(event) => updateAiField('ocrBaseUrl', event.target.value)}
+                    placeholder="留空时复用 LiteLLM"
+                  />
+                </label>
+                <label>
+                  <span>OCR API Key</span>
+                  <input
+                    type="password"
+                    value={aiForm.ocrApiKey}
+                    onChange={(event) => updateAiField('ocrApiKey', event.target.value)}
+                    placeholder="留空保持原值"
+                    autoComplete="new-password"
+                  />
+                  <em>{secretHint(settings?.ai?.ocr?.apiKey)}</em>
+                </label>
+                <label>
+                  <span>OCR 模型</span>
+                  <input
+                    value={aiForm.ocrModel}
+                    onChange={(event) => updateAiField('ocrModel', event.target.value)}
+                    placeholder="留空时复用聊天模型"
+                  />
+                </label>
+                <label>
+                  <span>PDF OCR 页数上限</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={aiForm.ocrMaxPdfPages}
+                    onChange={(event) => updateAiField('ocrMaxPdfPages', event.target.value)}
+                  />
+                </label>
+                <label>
+                  <span>触发 OCR 的最少文本字数</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="2000"
+                    value={aiForm.ocrMinTextChars}
+                    onChange={(event) => updateAiField('ocrMinTextChars', event.target.value)}
+                  />
+                </label>
+                <div className="settings-form-actions">
+                  <button type="button" className="ghost-button" onClick={testAiConfig} disabled={Boolean(busy)}>
+                    <Sparkles size={15} />
+                    {busy === 'ai-test' ? '测试中...' : '测试 AI 连接'}
+                  </button>
+                  <button type="submit" className="icon-button primary" disabled={Boolean(busy)}>
+                    <Save size={15} />
+                    {busy === 'ai-save' ? '保存中...' : '保存 AI 配置'}
+                  </button>
+                </div>
+              </form>
+            </section>
+
+            <section className="settings-card">
+              <div className="settings-card-head">
+                <div>
+                  <span>安全</span>
+                  <h3>修改访问密码</h3>
+                </div>
+                <span className={settings?.auth?.passwordEnabled ? 'settings-status-pill ok' : 'settings-status-pill warning'}>
+                  {settings?.auth?.passwordEnabled ? '密码登录' : '未启用'}
+                </span>
+              </div>
+              <form className="settings-stack-form" onSubmit={savePassword}>
+                <label>
+                  <span>当前密码</span>
+                  <input
+                    type="password"
+                    value={passwordForm.currentPassword}
+                    onChange={(event) => setPasswordForm({ ...passwordForm, currentPassword: event.target.value })}
+                    autoComplete="current-password"
+                    disabled={!settings?.auth?.passwordEnabled}
+                  />
+                </label>
+                <label>
+                  <span>新密码</span>
+                  <input
+                    type="password"
+                    value={passwordForm.newPassword}
+                    onChange={(event) => setPasswordForm({ ...passwordForm, newPassword: event.target.value })}
+                    autoComplete="new-password"
+                    disabled={!settings?.auth?.passwordEnabled}
+                  />
+                </label>
+                <label>
+                  <span>确认新密码</span>
+                  <input
+                    type="password"
+                    value={passwordForm.confirmPassword}
+                    onChange={(event) => setPasswordForm({ ...passwordForm, confirmPassword: event.target.value })}
+                    autoComplete="new-password"
+                    disabled={!settings?.auth?.passwordEnabled}
+                  />
+                </label>
+                <button type="submit" className="icon-button primary" disabled={Boolean(busy) || !settings?.auth?.passwordEnabled}>
+                  <ShieldCheck size={15} />
+                  {busy === 'password' ? '修改中...' : '保存新密码'}
+                </button>
+                {!settings?.auth?.passwordEnabled && (
+                  <p className="settings-help-text">当前不是密码登录模式，需要先在服务器 .env 中启用 AUTH_MODE=password。</p>
+                )}
+              </form>
+            </section>
+
+            <section className="settings-card">
+              <div className="settings-card-head">
+                <div>
+                  <span>部署</span>
+                  <h3>GitHub 在线更新</h3>
+                </div>
+                <span className={`settings-status-pill ${updateTone}`}>
+                  {updateStatus?.running
+                    ? '更新中'
+                    : updateStatus?.status === 'completed'
+                      ? '已完成'
+                      : updateStatus?.status === 'failed'
+                        ? '失败'
+                        : '待命'}
+                </span>
+              </div>
+              <div className="settings-stack-form">
+                <label>
+                  <span>更新分支</span>
+                  <input
+                    value={updateBranch}
+                    onChange={(event) => setUpdateBranch(event.target.value)}
+                    placeholder="main"
+                  />
+                </label>
+                <div className="settings-inline-actions">
+                  <button type="button" className="ghost-button" onClick={refreshUpdateStatus} disabled={Boolean(busy)}>
+                    <RefreshCw size={15} />
+                    查看状态
+                  </button>
+                  <button type="button" className="icon-button primary" onClick={startUpdate} disabled={Boolean(busy) || updateStatus?.running}>
+                    <Download size={15} />
+                    {updateStatus?.running ? '更新中...' : '从 GitHub 更新'}
+                  </button>
+                </div>
+                {updateStatus?.error && <p className="settings-error-text">{updateStatus.error}</p>}
+                <div className="settings-update-log" aria-label="在线更新日志">
+                  {(updateStatus?.logs || []).length
+                    ? updateStatus.logs.map((line, index) => <code key={`${line}-${index}`}>{line}</code>)
+                    : <span>暂无更新日志。</span>}
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <div className="settings-maintenance">
+            <SystemView addToast={addToast} />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 function reportSummaryTypeLabel(type) {
-  if (type === 'weekly') return '鍛ㄦ姤';
-  if (type === 'stage') return '闃舵鎬荤粨';
-  return '鏃ユ姤';
+  if (type === 'weekly') return '周报';
+  if (type === 'stage') return '阶段总结';
+  return '日报';
 }
 
 function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
@@ -7090,22 +7551,22 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
       const label = reportSummaryTypeLabel(aiSummary.type || aiSummaryType);
       const plain = [
         `AI${label}`,
-        `鏃堕棿鑼冨洿锛?{aiSummary.from} 鑷?${aiSummary.to}`,
+        `时间范围：${aiSummary.from} 至 ${aiSummary.to}`,
         '',
         aiContentToPlainText(aiSummary.html),
       ].filter(Boolean).join('\n');
       const contentJson = textToRichDoc(plain);
       const note = await api.createStandaloneNote({
-        title: `${label}锛?{aiSummary.from} 鑷?${aiSummary.to}`,
-        category: 'AI姹囨€?,
+        title: `${label}：${aiSummary.from} 至 ${aiSummary.to}`,
+        category: 'AI汇总',
         content: plain,
         contentJson,
       });
       setSavedSummaryNoteId(note.id);
-      addToast?.('success', '宸蹭繚瀛?, 'AI 姹囨€诲凡淇濆瓨涓虹嫭绔嬬瑪璁般€?);
+      addToast?.('success', '已保存', 'AI 汇总已保存为独立笔记。');
       await onNoteSaved?.(note);
     } catch (err) {
-      addToast?.('error', '鍑洪敊浜?, err.message);
+      addToast?.('error', '出错了', err.message);
       setAiError(err.message);
     } finally {
       setNoteSaving(false);
@@ -7153,20 +7614,20 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
         </label>
         <button className="ghost-button" onClick={loadReport} disabled={loading}>
           <RefreshCw size={16} />
-          鍒锋柊
+          刷新
         </button>
-        <div className="report-export-actions" aria-label="瀵煎嚭褰撳墠姹囨€?>
+        <div className="report-export-actions" aria-label="导出当前汇总">
           <a className="ghost-button" href={markdownExportUrl}>
             <Download size={16} />
-            瀵煎嚭 Markdown
+            导出 Markdown
           </a>
           <a className="ghost-button" href={excelExportUrl}>
             <Download size={16} />
-            瀵煎嚭 Excel
+            导出 Excel
           </a>
           <a className="ghost-button" href={pdfExportUrl}>
             <Download size={16} />
-            瀵煎嚭 PDF
+            导出 PDF
           </a>
         </div>
       </div>
@@ -7176,14 +7637,14 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
           <section className="ai-report-summary-panel">
             <div className="ai-report-summary-head">
               <div>
-                <span>AI 姹囨€?/span>
-                <h2>鐢熸垚鏃ユ姤銆佸懆鎶ユ垨闃舵鎬荤粨</h2>
+                <span>AI 汇总</span>
+                <h2>生成日报、周报或阶段总结</h2>
               </div>
               <div className="ai-report-actions">
                 {[
-                  ['daily', '鐢熸垚鏃ユ姤'],
-                  ['weekly', '鐢熸垚鍛ㄦ姤'],
-                  ['stage', '闃舵鎬荤粨'],
+                  ['daily', '生成日报'],
+                  ['weekly', '生成周报'],
+                  ['stage', '阶段总结'],
                 ].map(([type, label]) => (
                   <button
                     type="button"
@@ -7193,7 +7654,7 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
                     disabled={aiLoading}
                   >
                     <Sparkles size={14} />
-                    {aiLoading && aiSummaryType === type ? '鐢熸垚涓?..' : label}
+                    {aiLoading && aiSummaryType === type ? '生成中...' : label}
                   </button>
                 ))}
               </div>
@@ -7202,12 +7663,12 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
             {aiSummary && (
               <div className="ai-report-result">
                 <div className="ai-report-result-head">
-                  <span>{aiSummary.from} 鑷?{aiSummary.to}</span>
+                  <span>{aiSummary.from} 至 {aiSummary.to}</span>
                   <div className="ai-report-result-actions">
                     <CopyButton
                       value={aiContentToPlainText(aiSummary.html)}
-                      label="澶嶅埗鎬荤粨"
-                      copiedLabel="宸插鍒?
+                      label="复制总结"
+                      copiedLabel="已复制"
                       className="ghost-button"
                     />
                     <button
@@ -7217,7 +7678,7 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
                       disabled={noteSaving || Boolean(savedSummaryNoteId)}
                     >
                       <Save size={14} />
-                      {noteSaving ? '淇濆瓨涓?..' : savedSummaryNoteId ? '宸蹭繚瀛樹负绗旇' : '淇濆瓨涓虹瑪璁?}
+                      {noteSaving ? '保存中...' : savedSummaryNoteId ? '已保存为笔记' : '保存为笔记'}
                     </button>
                   </div>
                 </div>
@@ -7229,41 +7690,41 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
             )}
           </section>
           <div className="report-grid">
-            <Stat label="璁板綍鏃ュ織鏉℃暟" value={report.logs.length} />
-            <Stat label="绱鎶曞叆鏃堕暱" value={`${report.totalHours}h`} />
-            <Stat label="娑夊強浠诲姟涓暟" value={report.byTask.length} />
-            <Stat label="瀹屾垚鍏抽棴浠诲姟" value={report.completedTasks.length} />
+            <Stat label="记录日志条数" value={report.logs.length} />
+            <Stat label="累计投入时长" value={`${report.totalHours}h`} />
+            <Stat label="涉及任务个数" value={report.byTask.length} />
+            <Stat label="完成关闭任务" value={report.completedTasks.length} />
           </div>
           <div className="report-sections">
-            <ReportPanel title="瀹屾垚鍐呭">
+            <ReportPanel title="完成内容">
               {report.logs.map((log) => (
                 <div className="report-line" key={log.id}>
                   <strong>{log.taskTitle}</strong>
                   <span>{log.content}</span>
-                  <em>{log.logDate} 路 {log.hours}h 路 褰撴椂杩涘害 {log.progressSnapshot}%</em>
+                  <em>{log.logDate} · {log.hours}h · 当时进度 {log.progressSnapshot}%</em>
                 </div>
               ))}
-              {!report.logs.length && <div className="empty-column">璇ユ椂鏈熸棤宸ヤ綔璁板綍</div>}
+              {!report.logs.length && <div className="empty-column">该时期无工作记录</div>}
             </ReportPanel>
-            <ReportPanel title="杩涜涓换鍔?>
+            <ReportPanel title="进行中任务">
               {report.activeTasks.map((task) => (
                 <div className="report-line" key={task.id}>
                   <strong>{task.title}</strong>
-                  <span>{statusLabels[task.status]} 路 杩涘害宸茶揪 {task.progress}%</span>
-                  <em>鎴鏃ユ湡{formatDate(task.dueDate)}</em>
+                  <span>{statusLabels[task.status]} · 进度已达 {task.progress}%</span>
+                  <em>截止日期{formatDate(task.dueDate)}</em>
                 </div>
               ))}
-              {!report.activeTasks.length && <div className="empty-column">鏃犳椿鍔ㄤ腑鐨勬湭瀹屾垚浠诲姟</div>}
+              {!report.activeTasks.length && <div className="empty-column">无活动中的未完成任务</div>}
             </ReportPanel>
-            <ReportPanel title="涓嬩竴姝ヨ鍒?>
+            <ReportPanel title="下一步计划">
               {report.nextSteps.map((log) => (
                 <div className="report-line" key={`${log.id}-next`}>
                   <strong>{log.taskTitle}</strong>
                   <span>{log.nextStep}</span>
-                  <em>璺熻繘璁板綍鏃ユ湡{log.logDate}</em>
+                  <em>跟进记录日期{log.logDate}</em>
                 </div>
               ))}
-              {!report.nextSteps.length && <div className="empty-column">鏃犱笅涓€姝ュ緟鍔為」</div>}
+              {!report.nextSteps.length && <div className="empty-column">无下一步待办项</div>}
             </ReportPanel>
           </div>
         </>
@@ -7328,7 +7789,7 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
   function openSource(item) {
     if (item.noteId) {
       onOpenNotes(item.noteId, { includeLinked: true });
-      addToast('success', '宸插畾浣嶇瑪璁?, '宸茶烦杞埌闄勪欢鍏宠仈鐨勭瑪璁般€?);
+      addToast('success', '已定位笔记', '已跳转到附件关联的笔记。');
       return;
     }
     if (item.taskId) {
@@ -7337,7 +7798,7 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
         onOpenTask(task, item.kind === 'task' ? 'attachments' : item.kind === 'log' ? 'logs' : 'notes');
         return;
       }
-      addToast('info', '鎻愮ず', '褰撳墠绛涢€変笅鏈姞杞借浠诲姟锛屽彲鍦ㄧ湅鏉挎竻闄ょ瓫閫夊悗鍐嶆墦寮€銆?);
+      addToast('info', '提示', '当前筛选下未加载该任务，可在看板清除筛选后再打开。');
       return;
     }
   }
@@ -7383,21 +7844,21 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
     if (!selectedItems.length) return;
     const ok = askConfirm
       ? await askConfirm(
-        '绉诲叆闄勪欢鍥炴敹绔?,
-        `纭畾瑕佹妸閫変腑鐨?${selectedItems.length} 涓檮浠剁Щ鍏ュ洖鏀剁珯鍚楋紵鏂囦欢浼氫繚鐣欏湪鏈満锛屽彲鍦ㄥ洖鏀剁珯鎭㈠銆俙,
+        '移入附件回收站',
+        `确定要把选中的 ${selectedItems.length} 个附件移入回收站吗？文件会保留在本机，可在回收站恢复。`,
       )
       : true;
     if (!ok) return;
     try {
       const result = await api.moveAttachmentsToTrash(
         selectedItems.map((item) => ({ kind: item.kind, id: item.id })),
-        '闄勪欢涓績鎵归噺绉诲叆鍥炴敹绔?,
+        '附件中心批量移入回收站',
       );
       setSelectedKeys(new Set());
-      addToast('success', '宸茬Щ鍏ュ洖鏀剁珯', `宸插鐞?${result.moved || 0} 涓檮浠躲€俙);
+      addToast('success', '已移入回收站', `已处理 ${result.moved || 0} 个附件。`);
       await loadAttachments();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
@@ -7405,7 +7866,7 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
     if (!selectedItems.length) return;
     const retryItems = selectedItems.filter((item) => item.attachment?.textStatus !== 'processing');
     if (!retryItems.length) {
-      addToast('info', '鏃犻渶閲嶈瘯', '閫変腑鐨勯檮浠跺綋鍓嶆鍦ㄨ瘑鍒腑銆?);
+      addToast('info', '无需重试', '选中的附件当前正在识别中。');
       return;
     }
     try {
@@ -7416,12 +7877,12 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
       const failCount = results.length - okCount;
       addToast(
         failCount ? 'warning' : 'success',
-        '宸叉彁浜よ瘑鍒?,
-        failCount ? `宸叉彁浜?${okCount} 涓紝${failCount} 涓彁浜ゅけ璐ャ€俙 : `宸叉彁浜?${okCount} 涓檮浠堕噸鏂拌瘑鍒€俙,
+        '已提交识别',
+        failCount ? `已提交 ${okCount} 个，${failCount} 个提交失败。` : `已提交 ${okCount} 个附件重新识别。`,
       );
       await loadAttachments();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     }
   }
 
@@ -7435,22 +7896,22 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
     <section className="attachment-center-page">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">鏂囦欢璧勬枡</p>
-          <h2>闄勪欢涓績</h2>
+          <p className="eyebrow">文件资料</p>
+          <h2>附件中心</h2>
         </div>
         <button className="ghost-button" type="button" onClick={() => loadAttachments()} disabled={loading}>
           <RefreshCw size={16} />
-          鍒锋柊
+          刷新
         </button>
       </div>
 
       <div className="attachment-center-toolbar">
-        <div className="attachment-kind-tabs" role="tablist" aria-label="闄勪欢绫诲瀷">
+        <div className="attachment-kind-tabs" role="tablist" aria-label="附件类型">
           {[
-            ['all', '鍏ㄩ儴'],
-            ['task', '浠诲姟闄勪欢'],
-            ['log', '鏃ュ織闄勪欢'],
-            ['note', '绗旇闄勪欢'],
+            ['all', '全部'],
+            ['task', '任务附件'],
+            ['log', '日志附件'],
+            ['note', '笔记附件'],
           ].map(([value, label]) => (
             <button
               key={value}
@@ -7471,61 +7932,62 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
             onKeyDown={(event) => {
               if (event.key === 'Enter') loadAttachments();
             }}
-            placeholder="鎼滅储鏂囦欢鍚嶃€佸娉ㄦ垨鏉ユ簮..."
+            placeholder="搜索文件名、备注或来源..."
           />
         </label>
         <label>
-          <span>浠诲姟</span>
+          <span>任务</span>
           <select value={filters.taskId} onChange={(event) => updateFilter({ taskId: event.target.value })}>
-            <option value="">鍏ㄩ儴浠诲姟</option>
+            <option value="">全部任务</option>
             {tasks.map((task) => (
               <option key={task.id} value={task.id}>{task.title}</option>
             ))}
           </select>
         </label>
         <label>
-          <span>绫诲瀷</span>
+          <span>类型</span>
           <select value={filters.fileType} onChange={(event) => updateFilter({ fileType: event.target.value })}>
-            <option value="all">鍏ㄩ儴鏂囦欢</option>
-            <option value="image">鍥剧墖</option>
+            <option value="all">全部文件</option>
+            <option value="image">图片</option>
             <option value="pdf">PDF</option>
-            <option value="document">Word/鏂囨。</option>
-            <option value="spreadsheet">Excel/琛ㄦ牸</option>
-            <option value="archive">鍘嬬缉鍖?/option>
-            <option value="other">鍏朵粬</option>
+            <option value="document">Word/文档</option>
+            <option value="spreadsheet">Excel/表格</option>
+            <option value="archive">压缩包</option>
+            <option value="other">其他</option>
           </select>
         </label>
         <label>
-          <span>璇嗗埆</span>
+          <span>识别</span>
           <select value={filters.textStatus} onChange={(event) => updateFilter({ textStatus: event.target.value })}>
-            <option value="all">鍏ㄩ儴鐘舵€?/option>
-            <option value="completed">宸茶瘑鍒?/option>
-            <option value="pending">寰呰瘑鍒?/option>
-            <option value="processing">璇嗗埆涓?/option>
-            <option value="failed">璇嗗埆澶辫触</option>
-            <option value="unsupported">涓嶆敮鎸?/option>
-            <option value="none">鏈叆闃?/option>
+            <option value="all">全部状态</option>
+            <option value="completed">已识别</option>
+            <option value="pending">待识别</option>
+            <option value="processing">识别中</option>
+            <option value="failed">识别失败</option>
+            <option value="unsupported">不支持</option>
+            <option value="none">未入队</option>
           </select>
         </label>
         <label>
-          <span>寮€濮?/span>
+          <span>开始</span>
           <input type="date" value={filters.from} onChange={(event) => updateFilter({ from: event.target.value })} />
         </label>
         <label>
-          <span>缁撴潫</span>
+          <span>结束</span>
           <input type="date" value={filters.to} onChange={(event) => updateFilter({ to: event.target.value })} />
         </label>
         <button className="ghost-button" type="button" onClick={() => loadAttachments()} disabled={loading}>
           <ListFilter size={15} />
-          绛涢€?        </button>
-        <div className="attachment-view-toggle" role="group" aria-label="闄勪欢鏄剧ず鏂瑰紡">
+          筛选
+        </button>
+        <div className="attachment-view-toggle" role="group" aria-label="附件显示方式">
           <button
             type="button"
             className={viewMode === 'list' ? 'active' : ''}
             onClick={() => setViewMode('list')}
           >
             <ListFilter size={14} />
-            鍒楄〃
+            列表
           </button>
           <button
             type="button"
@@ -7533,7 +7995,8 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
             onClick={() => setViewMode('images')}
           >
             <ImageIcon size={14} />
-            鍥剧墖澧?            <span>{imageItems.length}</span>
+            图片墙
+            <span>{imageItems.length}</span>
           </button>
         </div>
       </div>
@@ -7541,9 +8004,9 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
       <div className="attachment-bulk-bar">
         <button className="ghost-button" type="button" onClick={toggleSelectAllVisible} disabled={!data.items?.length || loading}>
           <CheckCircle2 size={15} />
-          {allVisibleSelected ? '鍙栨秷鍏ㄩ€? : '閫夋嫨褰撳墠椤?}
+          {allVisibleSelected ? '取消全选' : '选择当前页'}
         </button>
-        <span>宸查€夋嫨 {selectedItems.length} 涓檮浠?/span>
+        <span>已选择 {selectedItems.length} 个附件</span>
         <button
           className="danger-button"
           type="button"
@@ -7551,7 +8014,8 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
           disabled={!selectedItems.length || loading}
         >
           <Trash2 size={15} />
-          绉诲叆鍥炴敹绔?        </button>
+          移入回收站
+        </button>
         <button
           className="ghost-button"
           type="button"
@@ -7559,18 +8023,18 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
           disabled={!selectedItems.length || loading}
         >
           <RefreshCw size={15} />
-          閲嶈瘯璇嗗埆
+          重试识别
         </button>
         {selectedItems.length > 0 && (
           <button className="ghost-button" type="button" onClick={() => setSelectedKeys(new Set())}>
-            娓呯┖閫夋嫨
+            清空选择
           </button>
         )}
       </div>
 
       {error && <div className="notice">{error}</div>}
       {loading ? (
-        <div className="empty-column">姝ｅ湪璇诲彇闄勪欢...</div>
+        <div className="empty-column">正在读取附件...</div>
       ) : viewMode === 'images' ? (
         imageItems.length ? (
           <div className="attachment-image-wall">
@@ -7586,7 +8050,7 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
             ))}
           </div>
         ) : (
-          <div className="empty-column">褰撳墠绛涢€変笅鏆傛棤鍥剧墖</div>
+          <div className="empty-column">当前筛选下暂无图片</div>
         )
       ) : data.items?.length ? (
         <div className="attachment-center-grid">
@@ -7604,27 +8068,27 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
           ))}
         </div>
       ) : (
-        <div className="empty-column">鏆傛棤闄勪欢</div>
+        <div className="empty-column">暂无附件</div>
       )}
       {previewItem && (
         <div className="attachment-preview-overlay" role="dialog" aria-modal="true" onClick={() => setPreviewItem(null)}>
           <div className="attachment-preview-shell" onClick={(event) => event.stopPropagation()}>
             <div className="attachment-preview-head">
               <div>
-                <strong>{previewItem.attachment?.originalName || '鍥剧墖棰勮'}</strong>
+                <strong>{previewItem.attachment?.originalName || '图片预览'}</strong>
                 <span>{previewItem.sourceTitle || previewItem.taskTitle || previewItem.sourceLabel}</span>
               </div>
               <div>
                 <a className="ghost-button" href={previewItem.attachment?.downloadUrl}>
                   <Download size={15} />
-                  涓嬭浇
+                  下载
                 </a>
-                <button className="round-button small" type="button" onClick={() => setPreviewItem(null)} title="鍏抽棴">
+                <button className="round-button small" type="button" onClick={() => setPreviewItem(null)} title="关闭">
                   <X size={15} />
                 </button>
               </div>
             </div>
-            <img src={previewItem.attachment?.previewUrl} alt={previewItem.attachment?.originalName || '鍥剧墖棰勮'} />
+            <img src={previewItem.attachment?.previewUrl} alt={previewItem.attachment?.originalName || '图片预览'} />
           </div>
         </div>
       )}
@@ -7641,7 +8105,7 @@ function AttachmentImageTile({ item, onOpenSource, selected, onToggleSelect, onP
           type="checkbox"
           checked={selected}
           onChange={() => onToggleSelect(item)}
-          aria-label={`閫夋嫨闄勪欢 ${attachment.originalName || item.id}`}
+          aria-label={`选择附件 ${attachment.originalName || item.id}`}
         />
       </label>
       <a
@@ -7656,17 +8120,17 @@ function AttachmentImageTile({ item, onOpenSource, selected, onToggleSelect, onP
         <img src={attachment.previewUrl} alt={attachment.originalName} />
       </a>
       <div>
-        <strong>{attachment.originalName || '鍥剧墖闄勪欢'}</strong>
-        <span>{formatFileSize(attachment.fileSize)} 路 {item.sourceLabel}</span>
+        <strong>{attachment.originalName || '图片附件'}</strong>
+        <span>{formatFileSize(attachment.fileSize)} · {item.sourceLabel}</span>
       </div>
       <div className="attachment-image-actions">
         <button type="button" onClick={() => onOpenSource(item)}>
           <ExternalLink size={13} />
-          鏉ユ簮
+          来源
         </button>
         <a href={attachment.downloadUrl}>
           <Download size={13} />
-          涓嬭浇
+          下载
         </a>
       </div>
     </article>
@@ -7688,11 +8152,11 @@ function AttachmentCenterCard({ item, onOpenSource, addToast, onChanged, selecte
     setSavingNote(true);
     try {
       await api.updateCenterAttachment(item.kind, item.id, { note: noteDraft });
-      addToast('success', '宸蹭繚瀛?, '闄勪欢澶囨敞宸叉洿鏂般€?);
+      addToast('success', '已保存', '附件备注已更新。');
       setEditingNote(false);
       await onChanged?.();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     } finally {
       setSavingNote(false);
     }
@@ -7721,20 +8185,20 @@ function AttachmentCenterCard({ item, onOpenSource, addToast, onChanged, selecte
       <div className="attachment-center-body">
         <div className="attachment-center-title">
           <span className={`recycle-kind ${item.kind}`}>
-            {item.kind === 'task' ? '浠诲姟闄勪欢' : item.kind === 'log' ? '鏃ュ織闄勪欢' : '绗旇闄勪欢'}
+            {item.kind === 'task' ? '任务附件' : item.kind === 'log' ? '日志附件' : '笔记附件'}
           </span>
-          <h3>{attachment.originalName || '鏈懡鍚嶉檮浠?}</h3>
+          <h3>{attachment.originalName || '未命名附件'}</h3>
         </div>
         <div className="attachment-center-meta">
           <span>{formatFileSize(attachment.fileSize)}</span>
-          <span>{attachment.mimeType || '鏂囦欢'}</span>
-          <span>涓婁紶锛歿item.createdAt || '-'}</span>
-          {item.logDate && <span>鏃ュ織锛歿formatDate(item.logDate)}</span>}
-          {item.noteCategory && <span>鍒嗙被锛歿item.noteCategory}</span>}
+          <span>{attachment.mimeType || '文件'}</span>
+          <span>上传：{item.createdAt || '-'}</span>
+          {item.logDate && <span>日志：{formatDate(item.logDate)}</span>}
+          {item.noteCategory && <span>分类：{item.noteCategory}</span>}
         </div>
         <button className="attachment-source-button" type="button" onClick={() => onOpenSource(item)}>
           <ExternalLink size={14} />
-          <span>{item.sourceTitle || item.taskTitle || '鎵撳紑鏉ユ簮'}</span>
+          <span>{item.sourceTitle || item.taskTitle || '打开来源'}</span>
         </button>
         <div className="attachment-note-box">
           {editingNote ? (
@@ -7742,13 +8206,13 @@ function AttachmentCenterCard({ item, onOpenSource, addToast, onChanged, selecte
               <textarea
                 value={noteDraft}
                 onChange={(event) => setNoteDraft(event.target.value)}
-                placeholder="鍐欎竴鐐归檮浠跺娉?.."
+                placeholder="写一点附件备注..."
                 rows={3}
               />
               <div>
                 <button className="primary-button" type="button" onClick={saveNote} disabled={savingNote}>
                   <Save size={13} />
-                  {savingNote ? '淇濆瓨涓?..' : '淇濆瓨澶囨敞'}
+                  {savingNote ? '保存中...' : '保存备注'}
                 </button>
                 <button
                   className="ghost-button"
@@ -7759,14 +8223,14 @@ function AttachmentCenterCard({ item, onOpenSource, addToast, onChanged, selecte
                   }}
                   disabled={savingNote}
                 >
-                  鍙栨秷
+                  取消
                 </button>
               </div>
             </>
           ) : (
             <>
-              <p className={attachment.note ? '' : 'muted'}>{attachment.note || '鏆傛棤澶囨敞'}</p>
-              <button className="round-button small" type="button" onClick={() => setEditingNote(true)} title="缂栬緫澶囨敞">
+              <p className={attachment.note ? '' : 'muted'}>{attachment.note || '暂无备注'}</p>
+              <button className="round-button small" type="button" onClick={() => setEditingNote(true)} title="编辑备注">
                 <Edit3 size={13} />
               </button>
             </>
@@ -7785,22 +8249,22 @@ function AttachmentCenterCard({ item, onOpenSource, addToast, onChanged, selecte
             type="checkbox"
             checked={selected}
             onChange={() => onToggleSelect(item)}
-            aria-label={`閫夋嫨闄勪欢 ${attachment.originalName || item.id}`}
+            aria-label={`选择附件 ${attachment.originalName || item.id}`}
           />
-          <span>{selected ? '宸查€? : '閫夋嫨'}</span>
+          <span>{selected ? '已选' : '选择'}</span>
         </label>
         {attachment.previewUrl && (
           attachment.isImage ? (
-            <button className="round-button small" type="button" onClick={() => onPreviewImage(item)} title="棰勮">
+            <button className="round-button small" type="button" onClick={() => onPreviewImage(item)} title="预览">
               <ExternalLink size={13} />
             </button>
           ) : (
-            <a className="round-button small" href={attachment.previewUrl} target="_blank" rel="noopener noreferrer" title="棰勮">
+            <a className="round-button small" href={attachment.previewUrl} target="_blank" rel="noopener noreferrer" title="预览">
               <ExternalLink size={13} />
             </a>
           )
         )}
-        <a className="round-button small" href={attachment.downloadUrl} title="涓嬭浇">
+        <a className="round-button small" href={attachment.downloadUrl} title="下载">
           <Download size={13} />
         </a>
       </div>
@@ -7850,11 +8314,11 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
       } else {
         await api.restoreTrashItem(item.type, item.id);
       }
-      addToast('success', '宸叉仮澶?, '椤圭洰宸蹭粠鍥炴敹绔欐仮澶嶃€?);
+      addToast('success', '已恢复', '项目已从回收站恢复。');
       await loadTrash();
       await onChanged?.();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     } finally {
       setBusyKey('');
     }
@@ -7862,8 +8326,8 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
 
   async function deleteForever(item) {
     const ok = await askConfirm(
-      '纭褰诲簳鍒犻櫎',
-      `纭畾瑕佸交搴曞垹闄も€?{item.title}鈥濆悧锛熻繖浼氭竻鐞嗘暟鎹簱璁板綍鍜岀浉鍏抽檮浠舵枃浠讹紝鏃犳硶浠庡洖鏀剁珯鎭㈠銆俙,
+      '确认彻底删除',
+      `确定要彻底删除“${item.title}”吗？这会清理数据库记录和相关附件文件，无法从回收站恢复。`,
     );
     if (!ok) return;
     const key = `delete-${item.type}-${item.kind || 'item'}-${item.id}`;
@@ -7874,11 +8338,11 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
       } else {
         await api.permanentlyDeleteTrashItem(item.type, item.id);
       }
-      addToast('success', '宸插交搴曞垹闄?, '椤圭洰宸蹭粠鍥炴敹绔欐案涔呯Щ闄ゃ€?);
+      addToast('success', '已彻底删除', '项目已从回收站永久移除。');
       await loadTrash();
       await onChanged?.();
     } catch (err) {
-      addToast('error', '鍑洪敊浜?, err.message);
+      addToast('error', '出错了', err.message);
     } finally {
       setBusyKey('');
     }
@@ -7896,21 +8360,21 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
     <section className="recycle-page">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">鏁版嵁淇濇姢</p>
-          <h2>鍥炴敹绔?/h2>
+          <p className="eyebrow">数据保护</p>
+          <h2>回收站</h2>
         </div>
         <button className="ghost-button" type="button" onClick={() => loadTrash()} disabled={loading}>
           <RefreshCw size={16} />
-          鍒锋柊
+          刷新
         </button>
       </div>
-      <div className="recycle-tabs" role="tablist" aria-label="鍥炴敹绔欑被鍨?>
+      <div className="recycle-tabs" role="tablist" aria-label="回收站类型">
         {[
-          ['all', '鍏ㄩ儴'],
-          ['task', '浠诲姟'],
-          ['log', '鏃ュ織'],
-          ['note', '绗旇'],
-          ['attachment', '闄勪欢'],
+          ['all', '全部'],
+          ['task', '任务'],
+          ['log', '日志'],
+          ['note', '笔记'],
+          ['attachment', '附件'],
         ].map(([value, label]) => (
           <button
             key={value}
@@ -7925,7 +8389,7 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
       </div>
       {error && <div className="notice">{error}</div>}
       {loading ? (
-        <div className="empty-column">姝ｅ湪璇诲彇鍥炴敹绔?..</div>
+        <div className="empty-column">正在读取回收站...</div>
       ) : items.length ? (
         <div className="recycle-list">
           {items.map((item) => (
@@ -7933,37 +8397,37 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
               <div className="recycle-card-main">
                 <span className={`recycle-kind ${item.type}`}>
                   {item.type === 'task'
-                    ? '浠诲姟'
+                    ? '任务'
                     : item.type === 'log'
-                      ? '鏃ュ織'
+                      ? '日志'
                       : item.type === 'note'
-                        ? '绗旇'
+                        ? '笔记'
                         : item.kind === 'task'
-                          ? '浠诲姟闄勪欢'
+                          ? '任务附件'
                           : item.kind === 'log'
-                            ? '鏃ュ織闄勪欢'
-                            : '绗旇闄勪欢'}
+                            ? '日志附件'
+                            : '笔记附件'}
                 </span>
                 <h3>{item.title}</h3>
-                <p>{item.summary || '鏆傛棤鎽樿'}</p>
+                <p>{item.summary || '暂无摘要'}</p>
                 <div className="recycle-meta">
-                  <span>鍒犻櫎鏃堕棿锛歿item.deletedAt || '-'}</span>
+                  <span>删除时间：{item.deletedAt || '-'}</span>
                   {item.attachment && (
-                    <span>{formatFileSize(item.attachment.fileSize)} 路 {item.attachment.mimeType || '鏂囦欢'}</span>
+                    <span>{formatFileSize(item.attachment.fileSize)} · {item.attachment.mimeType || '文件'}</span>
                   )}
-                  {item.taskTitle && <span>鎵€灞炰换鍔★細{item.taskTitle}</span>}
-                  {item.logDate && <span>鏃ュ織鏃ユ湡锛歿formatDate(item.logDate)}</span>}
-                  {item.noteTitle && <span>鎵€灞炵瑪璁帮細{item.noteTitle}</span>}
-                  {item.noteCategory && <span>鍒嗙被锛歿item.noteCategory}</span>}
-                  {item.category && <span>鍒嗙被锛歿item.category}</span>}
-                  {item.status && <span>鐘舵€侊細{statusLabels[item.status] || item.status}</span>}
-                  {item.priority && <span>浼樺厛绾э細{priorityLabels[item.priority] || item.priority}</span>}
+                  {item.taskTitle && <span>所属任务：{item.taskTitle}</span>}
+                  {item.logDate && <span>日志日期：{formatDate(item.logDate)}</span>}
+                  {item.noteTitle && <span>所属笔记：{item.noteTitle}</span>}
+                  {item.noteCategory && <span>分类：{item.noteCategory}</span>}
+                  {item.category && <span>分类：{item.category}</span>}
+                  {item.status && <span>状态：{statusLabels[item.status] || item.status}</span>}
+                  {item.priority && <span>优先级：{priorityLabels[item.priority] || item.priority}</span>}
                   {item.counts && (
-                    <span>鍏宠仈锛氭棩蹇?{item.counts.logs} 路 绗旇 {item.counts.notes} 路 闄勪欢 {item.counts.attachments}</span>
+                    <span>关联：日志 {item.counts.logs} · 笔记 {item.counts.notes} · 附件 {item.counts.attachments}</span>
                   )}
-                  {item.taskDeletedAt && <span className="warning-text">鎵€灞炰换鍔′篃鍦ㄥ洖鏀剁珯锛岃鍏堟仮澶嶄换鍔?/span>}
-                  {item.logDeletedAt && <span className="warning-text">鎵€灞炴棩蹇椾篃鍦ㄥ洖鏀剁珯锛岃鍏堟仮澶嶆棩蹇?/span>}
-                  {item.noteDeletedAt && <span className="warning-text">鎵€灞炵瑪璁颁篃鍦ㄥ洖鏀剁珯锛岃鍏堟仮澶嶇瑪璁?/span>}
+                  {item.taskDeletedAt && <span className="warning-text">所属任务也在回收站，请先恢复任务</span>}
+                  {item.logDeletedAt && <span className="warning-text">所属日志也在回收站，请先恢复日志</span>}
+                  {item.noteDeletedAt && <span className="warning-text">所属笔记也在回收站，请先恢复笔记</span>}
                 </div>
               </div>
               <div className="recycle-actions">
@@ -7974,7 +8438,7 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
                   disabled={Boolean(busyKey)}
                 >
                   <RotateCcw size={15} />
-                  {busyKey === `restore-${item.type}-${item.kind || 'item'}-${item.id}` ? '鎭㈠涓?..' : '鎭㈠'}
+                  {busyKey === `restore-${item.type}-${item.kind || 'item'}-${item.id}` ? '恢复中...' : '恢复'}
                 </button>
                 <button
                   className="danger-button"
@@ -7983,14 +8447,14 @@ function RecycleBinView({ askConfirm, addToast, onChanged }) {
                   disabled={Boolean(busyKey)}
                 >
                   <Trash2 size={15} />
-                  {busyKey === `delete-${item.type}-${item.kind || 'item'}-${item.id}` ? '鍒犻櫎涓?..' : '褰诲簳鍒犻櫎'}
+                  {busyKey === `delete-${item.type}-${item.kind || 'item'}-${item.id}` ? '删除中...' : '彻底删除'}
                 </button>
               </div>
             </article>
           ))}
         </div>
       ) : (
-        <div className="empty-column">鍥炴敹绔欎负绌?/div>
+        <div className="empty-column">回收站为空</div>
       )}
     </section>
   );
@@ -8008,10 +8472,10 @@ function ConfirmModal({ title, message, onConfirm, onCancel }) {
         <p>{message}</p>
         <div className="confirm-actions">
           <button className="ghost-button" onClick={onCancel}>
-            鍙栨秷
+            取消
           </button>
           <button className="icon-button primary danger-button" onClick={onConfirm} style={{ background: 'var(--high)', borderColor: 'var(--high)', color: '#fff' }}>
-            纭鍒犻櫎
+            确认删除
           </button>
         </div>
       </div>
@@ -8059,7 +8523,7 @@ function PasswordLogin({ onLogin }) {
   async function handleSubmit(event) {
     event.preventDefault();
     if (!password.trim()) {
-      setError('璇疯緭鍏ヨ闂瘑鐮併€?);
+      setError('请输入访问密码。');
       return;
     }
     setSubmitting(true);
@@ -8069,7 +8533,7 @@ function PasswordLogin({ onLogin }) {
       setPassword('');
       onLogin(status);
     } catch (err) {
-      setError(err.message || '鐧诲綍澶辫触锛岃绋嶅悗閲嶈瘯銆?);
+      setError(err.message || '登录失败，请稍后重试。');
     } finally {
       setSubmitting(false);
     }
@@ -8079,22 +8543,22 @@ function PasswordLogin({ onLogin }) {
     <main className="auth-screen">
       <form className="auth-panel password-auth-panel" onSubmit={handleSubmit}>
         <ShieldCheck size={32} aria-hidden="true" />
-        <h1>涓汉浠诲姟鍙?/h1>
-        <p>璇疯緭鍏ヨ闂瘑鐮佸悗缁х画绠＄悊浠诲姟銆佺瑪璁板拰宸ヤ綔鏃ュ織銆?/p>
+        <h1>个人任务台</h1>
+        <p>请输入访问密码后继续管理任务、笔记和工作日志。</p>
         <label className="auth-password-field">
-          <span>璁块棶瀵嗙爜</span>
+          <span>访问密码</span>
           <input
             type="password"
             value={password}
             autoFocus
             autoComplete="current-password"
-            placeholder="璇疯緭鍏ュ瘑鐮?
+            placeholder="请输入密码"
             onChange={(event) => setPassword(event.target.value)}
           />
         </label>
         {error && <p className="auth-error">{error}</p>}
         <button type="submit" className="primary-button" disabled={submitting}>
-          {submitting ? '楠岃瘉涓?..' : '杩涘叆浠诲姟鍙?}
+          {submitting ? '验证中...' : '进入任务台'}
         </button>
       </form>
     </main>
@@ -8124,10 +8588,10 @@ function App() {
       <main className="auth-screen">
         <section className="auth-panel">
           <ClipboardList size={30} aria-hidden="true" />
-          <h1>浠诲姟鍙版殏鏃舵棤娉曡繛</h1>
+          <h1>任务台暂时无法连</h1>
           <p>{authError}</p>
           <button type="button" className="primary-button" onClick={() => window.location.reload()}>
-            閲嶈瘯
+            重试
           </button>
         </section>
       </main>
@@ -8135,7 +8599,7 @@ function App() {
   }
 
   if (!auth) {
-    return <main className="auth-screen" aria-label="姝ｅ湪鍔犺浇浠诲姟鍙? />;
+    return <main className="auth-screen" aria-label="正在加载任务台" />;
   }
 
   if (auth.mode === 'oidc' && !auth.authenticated) {
@@ -8143,9 +8607,9 @@ function App() {
       <main className="auth-screen">
         <section className="auth-panel">
           <ClipboardList size={30} aria-hidden="true" />
-          <h1>涓汉浠诲姟鍙?/h1>
-          <p>璇峰厛瀹屾垚瀹夊叏鐧诲綍锛屽啀缁х画绠＄悊浠诲姟銆佺瑪璁板拰宸ヤ綔鏃ュ織</p>
-          <a className="primary-button" href="/auth/login">鐧诲綍</a>
+          <h1>个人任务台</h1>
+          <p>请先完成安全登录，再继续管理任务、笔记和工作日志</p>
+          <a className="primary-button" href="/auth/login">登录</a>
         </section>
       </main>
     );

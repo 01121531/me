@@ -104,6 +104,28 @@ export const api = {
     request('/auth/logout', {
       method: 'POST',
     }),
+  getSettings: () => request('/settings'),
+  updateAiSettings: (payload) =>
+    request('/settings/ai', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  testAiSettings: (payload) =>
+    request('/settings/ai/test', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updatePassword: (payload) =>
+    request('/settings/password', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  getOnlineUpdateStatus: () => request('/settings/update'),
+  startOnlineUpdate: (payload = {}) =>
+    request('/settings/update', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   searchWorkspace: (question, options = {}) =>
     request('/ai/search', {
       method: 'POST',

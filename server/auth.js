@@ -49,7 +49,7 @@ function parsePasswordHash(value) {
   };
 }
 
-function verifyPassword(password) {
+export function verifyPassword(password) {
   const parsed = parsePasswordHash(config.auth.passwordHash);
   if (!parsed || !Number.isFinite(parsed.iterations) || parsed.iterations < 100000) {
     return false;
@@ -57,6 +57,17 @@ function verifyPassword(password) {
   const expected = Buffer.from(parsed.hash, 'hex');
   const actual = hashPassword(password, parsed.salt, parsed.iterations);
   return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+export function createPasswordHash(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = hashPassword(password, salt, passwordHashIterations).toString('hex');
+  return `pbkdf2-sha256$${passwordHashIterations}$${salt}$${hash}`;
+}
+
+export function updatePasswordHash(nextHash) {
+  config.auth.passwordHash = String(nextHash || '');
+  process.env.AUTH_PASSWORD_HASH = config.auth.passwordHash;
 }
 
 function sessionCallback(req, res) {

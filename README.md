@@ -16,7 +16,7 @@ npm install
 cp .env.example .env
 ```
 
-3. 在 `.env` 中填写自己的 MySQL、AI、密码门禁等配置。
+3. 在 `.env` 中填写自己的 MySQL、AI、访问密码等配置。
 
 4. 初始化数据库并启动：
 
@@ -25,10 +25,20 @@ npm run init-db
 npm run dev
 ```
 
+## 设置页
+
+网站内的“设置”页面支持：
+
+- AI 网关、OCR、Qdrant 配置保存和 AI 连接测试
+- 修改访问密码
+- 从 GitHub 在线更新代码
+- 创建和校验本地备份
+
+敏感配置只写入服务器本机 `.env`，前端只显示“已配置/未配置”和脱敏预览。
+
 ## 生产更新
 
 服务器上的真实配置保留在 `/srv/assistant-task-board/.env`，不要提交到 GitHub。
-
 以后从 GitHub 更新服务器代码：
 
 ```bash

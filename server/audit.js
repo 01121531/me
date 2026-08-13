@@ -4,7 +4,11 @@ import { publishWorkspaceEvent } from './events.js';
 import { scheduleIndexJob } from './indexing.js';
 
 const mutatingMethods = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
-const sensitiveKeys = new Set(['password', 'token', 'authorization', 'secret', 'accessToken', 'refreshToken']);
+const sensitiveKeyPattern = /(password|token|authorization|secret|accessToken|refreshToken|apiKey|api_key|apikey)$/i;
+
+function isSensitiveKey(key) {
+  return sensitiveKeyPattern.test(String(key || ''));
+}
 
 function sanitizePayload(value, depth = 0) {
   if (depth > 4 || value === undefined || value === null) return value ?? null;
@@ -15,7 +19,7 @@ function sanitizePayload(value, depth = 0) {
   if (typeof value === 'object') {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [
       key,
-      sensitiveKeys.has(key) ? '[redacted]' : sanitizePayload(item, depth + 1),
+      isSensitiveKey(key) ? '[redacted]' : sanitizePayload(item, depth + 1),
     ]));
   }
   return value;
