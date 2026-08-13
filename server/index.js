@@ -1071,8 +1071,8 @@ app.get('/api/settings/weixin/events', (req, res) => {
   openWeixinEventStream(req, res);
 });
 
-app.post('/api/settings/weixin/login', asyncRoute(async (_req, res) => {
-  res.status(202).json(await startWeixinLogin());
+app.post('/api/settings/weixin/login', asyncRoute(async (req, res) => {
+  res.status(202).json(await startWeixinLogin({ force: req.body?.force === true }));
 }));
 
 app.post('/api/settings/weixin/verify', asyncRoute(async (req, res) => {

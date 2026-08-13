@@ -7799,29 +7799,41 @@ function SettingsView({ addToast, askConfirm }) {
           ? '实时连接不可用，已使用轮询'
           : '未连接';
   const aiConfigured = Boolean(settings?.ai?.litellm?.apiKey?.configured);
-  const weixinConnected = Boolean(weixinStatus?.connected && weixinStatus?.status === 'connected');
-  const weixinConnecting = ['connecting', 'reconnecting', 'waiting_scan', 'scanned', 'verifying', 'verify_required']
-    .includes(weixinStatus?.status);
-  const weixinTone = weixinConnected
-    ? 'ok'
-    : weixinStatus?.status === 'error'
-      ? 'error'
+  const weixinStatusCode = weixinStatus?.status || 'disconnected';
+  const weixinConnected = Boolean(weixinStatus?.connected);
+  const weixinHasAccount = Boolean(weixinStatus?.accountId);
+  const weixinLoginActive = ['waiting_scan', 'scanned', 'verifying', 'verify_required'].includes(weixinStatusCode);
+  const weixinConnecting = ['connecting', 'reconnecting'].includes(weixinStatusCode) || weixinLoginActive;
+  const weixinTone = weixinStatusCode === 'error' || weixinStatusCode === 'expired'
+    ? 'error'
+    : weixinStatusCode === 'connected'
+      ? 'ok'
       : weixinConnecting
         ? 'running'
         : 'idle';
-  const weixinLabel = weixinConnected
-    ? '已连接'
-    : weixinStatus?.status === 'waiting_scan'
-      ? '等待扫码'
-      : weixinStatus?.status === 'scanned'
-        ? '已扫码'
-        : weixinStatus?.status === 'verify_required'
-          ? '需要验证码'
-          : weixinStatus?.status === 'reconnecting'
-            ? '正在重连'
-            : weixinStatus?.status === 'error'
-              ? '连接异常'
-              : '未连接';
+  const weixinLabel = {
+    connected: '已连接',
+    connecting: '正在连接',
+    reconnecting: '正在重连',
+    waiting_scan: weixinConnected ? '等待重新扫码' : '等待扫码',
+    scanned: '已扫码，待确认',
+    verifying: '正在验证',
+    verify_required: '需要验证码',
+    expired: '二维码已过期',
+    error: '连接异常',
+    disconnected: '未连接',
+  }[weixinStatusCode] || '未连接';
+  const weixinDescription = weixinLoginActive && weixinConnected
+    ? '原微信连接仍在线，扫码确认后才会切换登录凭证。'
+    : weixinStatusCode === 'connecting'
+      ? '已读取保存的微信账号，正在建立消息监听。'
+      : weixinStatusCode === 'reconnecting'
+        ? '微信消息监听暂时中断，服务器正在自动重连。'
+        : weixinStatusCode === 'error'
+          ? (weixinStatus?.error || '微信连接异常，请刷新状态或重新登录。')
+          : weixinConnected
+            ? '微信消息会使用当前任务台数据库和 AI 配置回答。'
+            : '使用微信 ClawBot 扫码授权，不需要安装 OpenClaw。';
   const closeSettingsModal = () => setSettingsModal('');
 
   function formatUpdateTime(value) {
@@ -7834,13 +7846,28 @@ function SettingsView({ addToast, askConfirm }) {
   }
 
   async function startWeixinConnection() {
+    const replacingConnection = weixinHasAccount || weixinConnected;
+    if (replacingConnection) {
+      const confirmed = askConfirm
+        ? await askConfirm(
+            '重新登录微信',
+            '系统会生成新的登录二维码。当前微信连接会继续保持，只有新扫码确认成功后才会切换。',
+            { confirmText: '生成新二维码', tone: 'primary' },
+          )
+        : window.confirm('确认生成新的微信登录二维码吗？');
+      if (!confirmed) return;
+    }
     setBusy('weixin-login');
     setError('');
     try {
-      const status = await api.startWeixinLogin();
+      const status = await api.startWeixinLogin({ force: replacingConnection || weixinLoginActive });
       setWeixinStatus(status);
       setWeixinVerifyCode('');
-      addToast?.('info', '二维码已生成', '请用手机微信扫码并确认连接。');
+      if (status.qrDataUrl) {
+        addToast?.('info', replacingConnection ? '重新登录二维码已生成' : '二维码已生成', '请用手机微信扫码并确认连接。');
+      } else {
+        addToast?.('info', '微信连接已恢复', '服务器正在使用已保存的账号恢复消息监听。');
+      }
     } catch (err) {
       setError(err.message);
       addToast?.('error', '生成二维码失败', err.message);
@@ -8193,7 +8220,7 @@ function SettingsView({ addToast, askConfirm }) {
           <div>
             <span>个人微信私聊</span>
             <strong>{weixinLabel}</strong>
-            <p>{weixinConnected ? '微信消息会使用当前任务台数据库和 AI 配置回答。' : '使用微信 ClawBot 扫码授权，不需要安装 OpenClaw。'}</p>
+            <p>{weixinDescription}</p>
           </div>
           <span className={`settings-status-pill ${weixinTone}`}>{weixinLabel}</span>
         </section>
@@ -8244,7 +8271,13 @@ function SettingsView({ addToast, askConfirm }) {
         <div className="settings-inline-actions">
           <button type="button" className="icon-button primary" onClick={startWeixinConnection} disabled={Boolean(busy)}>
             <QrCode size={16} />
-            {busy === 'weixin-login' ? '生成中...' : weixinConnected ? '重新登录' : '扫码连接'}
+            {busy === 'weixin-login'
+              ? '生成中...'
+              : weixinLoginActive
+                ? '重新生成二维码'
+                : weixinHasAccount
+                  ? '重新登录'
+                  : '扫码连接'}
           </button>
           <button type="button" className="ghost-button danger" onClick={disconnectWeixinConnection} disabled={Boolean(busy) || (!weixinStatus?.connected && !weixinStatus?.accountId)}>
             <Unplug size={16} />
@@ -8321,7 +8354,7 @@ function SettingsView({ addToast, askConfirm }) {
               title="微信对话"
               status={weixinLabel}
               statusClassName={weixinTone}
-              actionLabel={weixinConnected ? '管理微信连接' : '扫码连接微信'}
+              actionLabel={weixinHasAccount || weixinLoginActive ? '管理微信连接' : '扫码连接微信'}
               onOpen={() => setSettingsModal('weixin')}
             >
               <dl className="settings-summary-list">

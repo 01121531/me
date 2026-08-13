@@ -125,10 +125,10 @@ export const api = {
     }),
   getOnlineUpdateStatus: () => request('/settings/update'),
   getWeixinStatus: () => request('/settings/weixin'),
-  startWeixinLogin: () =>
+  startWeixinLogin: (options = {}) =>
     request('/settings/weixin/login', {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify(options),
     }),
   submitWeixinVerifyCode: (code) =>
     request('/settings/weixin/verify', {

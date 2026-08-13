@@ -649,9 +649,21 @@ async function loginPollingLoop(session, signal) {
       return;
     } else if (result.status === 'binded_redirect') {
       if (credentials?.token) {
-        loginSession = null;
-        loginController = null;
-        await startMonitor();
+        const monitorActive = Boolean(monitorController && !monitorController.signal.aborted);
+        finishAttempt(
+          {
+            status: 'connecting',
+            connected: true,
+            phase: 'connecting',
+            accountId: credentials.accountId || '',
+            qrDataUrl: '',
+            qrExpiresAt: null,
+            needsVerifyCode: false,
+            error: '',
+          },
+          '当前微信账号已经绑定',
+        );
+        if (!monitorActive) await startMonitor();
       }
       else patchState({ status: 'error', phase: 'error', error: '该微信已绑定，但服务器没有本地凭证，请先在微信插件中解除后重试。' });
       return;
@@ -688,7 +700,14 @@ async function loginPollingLoop(session, signal) {
   }
 }
 
-export async function startWeixinLogin() {
+export async function startWeixinLogin({ force = false } = {}) {
+  if (!force && loginSession && loginController && !loginController.signal.aborted) {
+    return publicState();
+  }
+  if (!force && credentials?.token) {
+    if (!monitorController || monitorController.signal.aborted) await startMonitor();
+    return publicState();
+  }
   abortLogin();
   const qr = await startWeixinQrLogin(credentials?.token ? [credentials.token] : []);
   const session = {
