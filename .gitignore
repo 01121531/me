@@ -1,0 +1,63 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.cookies
+
+# Build output
+dist/
+coverage/
+
+# Runtime data
+uploads/
+backups/
+downloads/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Deployment scratch files and archives
+.deploy/
+.deploy-test.txt
+*.tar
+*.tar.gz
+*.tgz
+*.gz
+*.zip
+*.rar
+*.7z
+*.enc
+
+# Local caches
+.gocache/
+.gocache-release/
+.cache/
+.vite/
+
+# Large local release artifacts from adjacent work
+huichuan-*
+huichuan-ai-release/
+huichuan-upload/
+upload-v1.1.4-parts/
+*-linux-amd64
+*.exe
+
+# Temporary scan/debug files
+check_patterns.go
+patterns.txt
+patterns.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
