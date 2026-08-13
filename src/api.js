@@ -51,6 +51,7 @@ async function streamRequest(path, payload, handlers = {}) {
     credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    signal: handlers.signal,
   });
 
   if (!response.ok) {
@@ -70,6 +71,8 @@ async function streamRequest(path, payload, handlers = {}) {
     if (!parsed) return;
     if (parsed.event === 'sources') handlers.onSources?.(parsed.payload || []);
     if (parsed.event === 'conversation') handlers.onConversation?.(parsed.payload || null);
+    if (parsed.event === 'intent') handlers.onIntent?.(String(parsed.payload || ''));
+    if (parsed.event === 'actionRequests') handlers.onActionRequests?.(parsed.payload || []);
     if (parsed.event === 'delta') handlers.onDelta?.(String(parsed.payload || ''));
     if (parsed.event === 'done') handlers.onDone?.(parsed.payload || {});
     if (parsed.event === 'error') {
@@ -121,6 +124,22 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getOnlineUpdateStatus: () => request('/settings/update'),
+  getWeixinStatus: () => request('/settings/weixin'),
+  startWeixinLogin: () =>
+    request('/settings/weixin/login', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  submitWeixinVerifyCode: (code) =>
+    request('/settings/weixin/verify', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  disconnectWeixin: () =>
+    request('/settings/weixin/disconnect', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
   checkOnlineUpdate: (payload = {}) =>
     request('/settings/update/check', {
       method: 'POST',

@@ -9,8 +9,10 @@ let chatModelSignature = '';
 
 const workspaceAssistantPrompt = [
   '你是个人助理任务台的工作助手。',
-  '只能根据用户提供的任务台资料回答；资料不足时必须明确说明无法确认。',
+  '数据库事实只能来自下方提供的任务台资料；资料不足时必须明确说明缺少什么，禁止自行补全。',
   '回答使用中文，简洁，并在相关句子后标注来源编号，例如 [1]。',
+  '回答必须把事实和建议分开：事实放在标题为“数据库事实”的区块；只有用户需要分析或下一步时才增加标题为“AI 建议”的区块。',
+  '建议必须明确标注为建议，不得把建议描述成已经发生的任务、日志、日期、进度或附件内容。',
   '输出可嵌入页面的安全 HTML 片段，不要输出完整 html、head 或 body。',
   '不要使用 Markdown 语法，不要输出 **加粗**、- 列表、反引号代码块；必须直接使用 HTML 标签表达结构。',
   '优先使用 p、strong、em、ul、ol、li、table、thead、tbody、tr、th、td、dl、dt、dd、section、progress、blockquote、pre、code、br、h3、h4、a 等内容标签。',
@@ -207,26 +209,54 @@ function isImageMimeType(value) {
 
 function isIncompleteTaskQuestion(question) {
   const text = String(question || '').toLowerCase();
-  return /未完成|没完成|還沒完成|没有完成|哪些任务|还有.*任务|待办|进行中|未处理|没做完|open tasks|incomplete tasks|unfinished tasks/.test(text);
+  return /未完成|没完成|還沒完成|没有完成|还有.*(?:没|未).*任务|待办任务|未处理任务|没做完|open tasks|incomplete tasks|unfinished tasks/.test(text);
 }
 
-function classifyAiQueryIntent(question) {
+function isTaskOverviewQuestion(question) {
+  return /任务总览|任务概览|全部任务|所有任务|有哪些任务|任务情况|任务统计|我的任务/.test(String(question || ''));
+}
+
+function isTodayLogQuestion(question) {
+  return /今天.*(?:做了|日志|记录|进展)|今日.*(?:日志|工作|进展)|今天的工作/.test(String(question || ''));
+}
+
+function isWeekLogQuestion(question) {
+  return /本周.*(?:做了|日志|记录|进展|工作)|这周.*(?:做了|日志|记录|进展|工作)|周报|本星期/.test(String(question || ''));
+}
+
+function hasActionSignal(question) {
+  const text = String(question || '').trim();
+  if (/^(怎么|如何|为什么|能否介绍|可以怎样)/.test(text)) return false;
+  return /(新建|创建|新增|添加|修改|更新|编辑|改成|设为|设置为|调整到|记录到|写入|写(?:一条|一个)?(?:日志|笔记))/.test(text)
+    && /(任务|待办|日志|工作记录|笔记|备忘|进度|优先级|待办|进行中|已完成)/.test(text);
+}
+
+export function classifyAiQueryIntent(question) {
   const text = compactText(question);
+  if (hasActionSignal(question)) return 'action';
+  if (isTodayLogQuestion(question)) return 'log_today';
+  if (isWeekLogQuestion(question)) return 'log_week';
+  if (isIncompleteTaskQuestion(question)) return 'incomplete_tasks';
+  if (isTaskOverviewQuestion(question)) return 'task_overview';
   const hasTaskSignal = isIncompleteTaskQuestion(question)
     || /任务|待办|进行中|已完成|未完成|没完成|进度|状态|截止|优先级|工作日志|下一步|工时|耗时/.test(text);
   const hasNoteSignal = /笔记|记事|备忘|会议笔记|会议记录/.test(text);
   const hasAttachmentSignal = /附件|文件|pdf|图片|截图|word|excel|表格|压缩包|下载|预览/.test(text);
   const hasLinkSignal = /网址|链接|网站|url|https?:\/\//i.test(String(question || ''));
   if (hasTaskSignal && hasNoteSignal) return 'task_note';
-  if (hasNoteSignal) return 'note';
-  if (hasTaskSignal) return 'task';
-  if (hasAttachmentSignal) return 'attachment';
-  if (hasLinkSignal) return 'link';
+  if (hasNoteSignal) return 'note_search';
+  if (hasAttachmentSignal) return 'attachment_search';
+  if (hasLinkSignal) return 'link_search';
+  if (hasTaskSignal) return 'task_progress';
   return 'general';
 }
 
 function isTaskLikeIntent(intent) {
-  return intent === 'task' || intent === 'task_note';
+  return ['task', 'task_note', 'task_overview', 'incomplete_tasks', 'task_progress', 'log_today', 'log_week'].includes(intent);
+}
+
+function isNoteLikeIntent(intent) {
+  return intent === 'note' || intent === 'note_search';
 }
 
 function stripGenericQueryPhrases(value) {
@@ -325,6 +355,7 @@ function toSource(hit) {
     score: Math.round(Number(hit.score || 0) * 1000) / 1000,
     mode: metadata.searchMode || 'semantic',
     reason: metadata.reason || '',
+    matchedFields: Array.isArray(metadata.matchedFields) ? metadata.matchedFields : [],
     links,
     downloadUrl: metadata.downloadUrl || null,
     previewUrl: metadata.previewUrl || null,
@@ -332,6 +363,27 @@ function toSource(hit) {
     mimeType: metadata.mimeType || null,
     isImage: Boolean(metadata.isImage),
     copyText: metadata.copyText || metadata.fileName || hit.text.slice(0, 360),
+  };
+}
+
+function matchedFieldsFor(terms, fields) {
+  const normalizedTerms = terms.map(compactText).filter(Boolean);
+  return Object.entries(fields)
+    .filter(([, value]) => {
+      const haystack = compactText(value);
+      return haystack && normalizedTerms.some((term) => haystack.includes(term));
+    })
+    .map(([label]) => label);
+}
+
+function withMatchedFields(hit, matchedFields, score = hit.score) {
+  return {
+    ...hit,
+    score,
+    metadata: {
+      ...(hit.metadata || {}),
+      matchedFields: uniqueValues(matchedFields),
+    },
   };
 }
 
@@ -384,6 +436,11 @@ function logNode(row, score = 0.42) {
       taskId: Number(row.task_id),
       title: row.task_title,
       logDate: row.log_date,
+      content: row.content,
+      stage: row.stage,
+      progressSnapshot: Number(row.progress_snapshot || 0),
+      hours: Number(row.hours || 0),
+      nextStep: row.next_step || '',
       searchMode: 'keyword',
     },
   };
@@ -467,7 +524,14 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     `,
     [...taskParams, normalizedLimit],
   );
-  hits.push(...taskRows.map((row) => taskNode(row)));
+  hits.push(...taskRows.map((row) => {
+    const matchedFields = matchedFieldsFor(terms, {
+      '任务标题': row.title,
+      '任务说明': row.description,
+      '任务标签': row.tags,
+    });
+    return withMatchedFields(taskNode(row), matchedFields, matchedFields.includes('任务标题') ? 0.9 : 0.68);
+  }));
 
   const logLike = likeClause(['l.content', 'l.next_step', 't.title'], terms);
   const logParams = [...logLike.params];
@@ -487,7 +551,14 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     `,
     [...logParams, normalizedLimit],
   );
-  hits.push(...logRows.map((row) => logNode(row)));
+  hits.push(...logRows.map((row) => {
+    const matchedFields = matchedFieldsFor(terms, {
+      '任务标题': row.task_title,
+      '日志内容': row.content,
+      '下一步': row.next_step,
+    });
+    return withMatchedFields(logNode(row), matchedFields, matchedFields.includes('日志内容') ? 0.82 : 0.66);
+  }));
 
   const noteLike = likeClause(['n.title', 'n.content', 'n.category', 't.title'], terms);
   const noteParams = [...noteLike.params];
@@ -507,7 +578,15 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     `,
     [...noteParams, normalizedLimit],
   );
-  hits.push(...noteRows.map((row) => noteNode(row)));
+  hits.push(...noteRows.map((row) => {
+    const matchedFields = matchedFieldsFor(terms, {
+      '笔记标题': row.title,
+      '笔记内容': row.content,
+      '笔记分类': row.category,
+      '关联任务': row.task_title,
+    });
+    return withMatchedFields(noteNode(row), matchedFields, matchedFields.includes('笔记标题') ? 0.84 : 0.64);
+  }));
 
   const attachmentLike = likeClause(['a.original_name', 'a.note', 'c.text', 't.title'], terms);
   const attachmentParams = [...attachmentLike.params];
@@ -526,7 +605,16 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     `,
     [...attachmentParams, normalizedLimit],
   );
-  hits.push(...taskAttachmentRows.map((row) => attachmentNode(row, 'task_attachment', 'task_id')));
+  hits.push(...taskAttachmentRows.map((row) => withMatchedFields(
+    attachmentNode(row, 'task_attachment', 'task_id'),
+    matchedFieldsFor(terms, {
+      '文件名': row.original_name,
+      '附件备注': row.note,
+      '附件文字': row.cached_text,
+      '关联任务': row.task_title,
+    }),
+    0.72,
+  )));
 
   const logAttachmentLike = likeClause(['a.original_name', 'a.note', 'c.text', 't.title', 'l.content'], terms);
   const logAttachmentParams = [...logAttachmentLike.params];
@@ -551,7 +639,17 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     `,
     [...logAttachmentParams, normalizedLimit],
   );
-  hits.push(...logAttachmentRows.map((row) => attachmentNode(row, 'log_attachment', 'log_id')));
+  hits.push(...logAttachmentRows.map((row) => withMatchedFields(
+    attachmentNode(row, 'log_attachment', 'log_id'),
+    matchedFieldsFor(terms, {
+      '文件名': row.original_name,
+      '附件备注': row.note,
+      '附件文字': row.cached_text,
+      '日志内容': row.owner_title,
+      '关联任务': row.task_title,
+    }),
+    0.7,
+  )));
 
   const noteAttachmentLike = likeClause(['a.original_name', 'a.note', 'c.text', 'n.title', 'n.content', 't.title'], terms);
   const noteAttachmentParams = [...noteAttachmentLike.params];
@@ -576,7 +674,17 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     `,
     [...noteAttachmentParams, normalizedLimit],
   );
-  hits.push(...noteAttachmentRows.map((row) => attachmentNode(row, 'note_attachment', 'note_id')));
+  hits.push(...noteAttachmentRows.map((row) => withMatchedFields(
+    attachmentNode(row, 'note_attachment', 'note_id'),
+    matchedFieldsFor(terms, {
+      '文件名': row.original_name,
+      '附件备注': row.note,
+      '附件文字': row.cached_text,
+      '笔记标题': row.owner_title,
+      '关联任务': row.task_title,
+    }),
+    0.7,
+  )));
 
   return hits.slice(0, normalizedLimit);
 }
@@ -667,9 +775,13 @@ async function answerIncompleteTasks(question, options = {}) {
   const sources = hits.map(toSource);
   if (!hits.length) {
     return {
-      answer: '<p>当前任务台没有未完成任务。</p>',
+      answer: '<section class="ai-fact-panel"><h3>数据库事实</h3><p>当前任务台没有未完成任务。</p></section>',
       sources: [],
       grounded: true,
+      intent: 'incomplete_tasks',
+      facts: [],
+      suggestions: [],
+      actionRequests: [],
     };
   }
 
@@ -726,8 +838,8 @@ async function answerIncompleteTasks(question, options = {}) {
 
   return {
     answer: [
-      '<section class="ai-summary-panel">',
-      `<h3>未完成任务概览</h3>`,
+      '<section class="ai-fact-panel">',
+      '<h3>数据库事实</h3>',
       `<p>你当前还有 <strong>${hits.length}</strong> 个未完成任务，需要继续跟进。</p>`,
       `<section class="ai-metric-grid">${metrics}</section>`,
       '</section>',
@@ -735,7 +847,410 @@ async function answerIncompleteTasks(question, options = {}) {
     ].join(''),
     sources,
     grounded: true,
+    intent: 'incomplete_tasks',
+    facts: hits.map((hit) => ({
+      type: 'task',
+      id: Number(hit.metadata.entityId),
+      title: hit.metadata.title,
+      status: hit.metadata.status,
+      progress: hit.metadata.progress,
+    })),
+    suggestions: [],
+    actionRequests: [],
   };
+}
+
+const statusLabels = {
+  todo: '待办',
+  in_progress: '进行中',
+  done: '已完成',
+};
+
+const priorityLabels = {
+  low: '低',
+  medium: '中',
+  high: '高',
+};
+
+function taskMetricsHtml(items, { includeTotal = true } = {}) {
+  const counts = items.reduce((result, item) => {
+    const status = item.metadata?.status || 'unknown';
+    result[status] = (result[status] || 0) + 1;
+    return result;
+  }, {});
+  const averageProgress = items.length
+    ? Math.round(items.reduce((sum, item) => sum + Number(item.metadata?.progress || 0), 0) / items.length)
+    : 0;
+  const metrics = [
+    includeTotal ? ['全部任务', items.length] : null,
+    ['进行中', counts.in_progress || 0],
+    ['待办', counts.todo || 0],
+    ['平均进度', `${averageProgress}%`],
+  ].filter(Boolean);
+  return metrics.map(([label, value]) => (
+    `<section class="ai-metric-card"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></section>`
+  )).join('');
+}
+
+function taskCardsHtml(items) {
+  return items.map((hit, index) => {
+    const metadata = hit.metadata || {};
+    const progress = Math.max(0, Math.min(100, Number(metadata.progress || 0)));
+    return [
+      '<section class="ai-task-panel-card">',
+      '<header>',
+      `<span class="ai-task-index">${index + 1}</span>`,
+      `<strong>${escapeHtml(metadata.title || `任务 #${metadata.entityId}`)}</strong>`,
+      `<em>[${index + 1}]</em>`,
+      '</header>',
+      '<dl class="ai-task-meta">',
+      `<dt>状态</dt><dd><span class="ai-badge status-${escapeHtml(metadata.status || 'unknown')}">${escapeHtml(statusLabels[metadata.status] || '未知')}</span></dd>`,
+      `<dt>优先级</dt><dd>${escapeHtml(priorityLabels[metadata.priority] || '未设置')}</dd>`,
+      `<dt>进度</dt><dd><progress value="${progress}" max="100">${progress}%</progress><span>${progress}%</span></dd>`,
+      metadata.dueDate ? `<dt>截止日期</dt><dd>${escapeHtml(metadata.dueDate)}</dd>` : '',
+      '</dl>',
+      '</section>',
+    ].filter(Boolean).join('');
+  }).join('');
+}
+
+async function answerTaskOverview(question, options = {}) {
+  if (!isTaskOverviewQuestion(question)) return null;
+  const taskId = normalizeTaskId(options.taskId);
+  const params = [];
+  const taskFilter = taskId ? 'AND id = ?' : '';
+  if (taskId) params.push(taskId);
+  const [rows] = await getPool().query(
+    `
+      SELECT *
+      FROM tasks
+      WHERE deleted_at IS NULL ${taskFilter}
+      ORDER BY FIELD(status, 'in_progress', 'todo', 'done'), sort_order ASC, updated_at DESC
+      LIMIT 50
+    `,
+    params,
+  );
+  const hits = rows.map((row) => withSourceReason(
+    withMatchedFields(taskNode(row, 0.98), ['任务状态', '任务进度'], 0.98),
+    '任务总览',
+  ));
+  if (!hits.length) {
+    return {
+      answer: '<section class="ai-fact-panel"><h3>数据库事实</h3><p>当前任务台还没有任务。</p></section>',
+      sources: [],
+      grounded: true,
+      intent: 'task_overview',
+      facts: [],
+      suggestions: [],
+      actionRequests: [],
+    };
+  }
+  const doneCount = hits.filter((hit) => hit.metadata.status === 'done').length;
+  return {
+    answer: [
+      '<section class="ai-fact-panel">',
+      '<h3>数据库事实</h3>',
+      `<p>当前共有 <strong>${hits.length}</strong> 个任务，其中已完成 <strong>${doneCount}</strong> 个。</p>`,
+      `<section class="ai-metric-grid">${taskMetricsHtml(hits)}</section>`,
+      '</section>',
+      `<section class="ai-task-grid">${taskCardsHtml(hits)}</section>`,
+    ].join(''),
+    sources: hits.map(toSource),
+    grounded: true,
+    intent: 'task_overview',
+    facts: hits.map((hit) => ({
+      type: 'task',
+      id: Number(hit.metadata.entityId),
+      title: hit.metadata.title,
+      status: hit.metadata.status,
+      progress: hit.metadata.progress,
+    })),
+    suggestions: [],
+    actionRequests: [],
+  };
+}
+
+async function logPeriodHits(intent, options = {}) {
+  const taskId = normalizeTaskId(options.taskId);
+  const params = [];
+  const taskFilter = taskId ? 'AND l.task_id = ?' : '';
+  if (taskId) params.push(taskId);
+  const dateFilter = intent === 'log_today'
+    ? 'l.log_date = CURDATE()'
+    : 'YEARWEEK(l.log_date, 1) = YEARWEEK(CURDATE(), 1)';
+  const [rows] = await getPool().query(
+    `
+      SELECT l.*, t.title AS task_title
+      FROM work_logs l
+      JOIN tasks t ON t.id = l.task_id
+      WHERE l.deleted_at IS NULL AND t.deleted_at IS NULL AND ${dateFilter} ${taskFilter}
+      ORDER BY l.log_date DESC, l.id DESC
+      LIMIT 100
+    `,
+    params,
+  );
+  return rows.map((row) => withSourceReason(
+    withMatchedFields(logNode(row, 0.96), ['日志日期', '日志内容'], 0.96),
+    intent === 'log_today' ? '今日日志' : '本周日志',
+  ));
+}
+
+async function answerLogPeriod(question, options = {}) {
+  const intent = isTodayLogQuestion(question) ? 'log_today' : isWeekLogQuestion(question) ? 'log_week' : null;
+  if (!intent) return null;
+  const hits = await logPeriodHits(intent, options);
+  const periodLabel = intent === 'log_today' ? '今天' : '本周';
+  if (!hits.length) {
+    return {
+      answer: `<section class="ai-fact-panel"><h3>数据库事实</h3><p>${periodLabel}还没有工作日志记录。</p></section>`,
+      sources: [],
+      grounded: true,
+      intent,
+      facts: [],
+      suggestions: [],
+      actionRequests: [],
+    };
+  }
+  const totalHours = hits.reduce((sum, hit) => sum + Number(hit.metadata?.hours || 0), 0);
+  const taskCount = new Set(hits.map((hit) => hit.metadata?.taskId).filter(Boolean)).size;
+  const rows = hits.map((hit, index) => {
+    const metadata = hit.metadata || {};
+    return [
+      '<tr>',
+      `<td>${index + 1}</td>`,
+      `<td>${escapeHtml(metadata.logDate || '')}</td>`,
+      `<td>${escapeHtml(metadata.title || '')}</td>`,
+      `<td>${escapeHtml(metadata.content || hit.text)}</td>`,
+      `<td>${escapeHtml(Number(metadata.hours || 0))} 小时</td>`,
+      `<td>[${index + 1}]</td>`,
+      '</tr>',
+    ].join('');
+  }).join('');
+  return {
+    answer: [
+      '<section class="ai-fact-panel">',
+      '<h3>数据库事实</h3>',
+      `<p>${periodLabel}记录了 <strong>${hits.length}</strong> 条日志，涉及 <strong>${taskCount}</strong> 个任务，总耗时 <strong>${totalHours.toFixed(2)}</strong> 小时。</p>`,
+      '<section class="ai-metric-grid">',
+      `<section class="ai-metric-card"><span>日志条数</span><strong>${hits.length}</strong></section>`,
+      `<section class="ai-metric-card"><span>涉及任务</span><strong>${taskCount}</strong></section>`,
+      `<section class="ai-metric-card"><span>总耗时</span><strong>${totalHours.toFixed(2)}h</strong></section>`,
+      '</section>',
+      '</section>',
+      '<table><thead><tr><th>#</th><th>日期</th><th>任务</th><th>工作内容</th><th>耗时</th><th>来源</th></tr></thead>',
+      `<tbody>${rows}</tbody></table>`,
+    ].join(''),
+    sources: hits.map(toSource),
+    grounded: true,
+    intent,
+    facts: hits.map((hit) => ({
+      type: 'log',
+      id: Number(hit.metadata.entityId),
+      taskId: hit.metadata.taskId,
+      date: hit.metadata.logDate,
+      hours: Number(hit.metadata.hours || 0),
+    })),
+    suggestions: [],
+    actionRequests: [],
+  };
+}
+
+function taskTitleMatchScore(row, question) {
+  const title = compactText(row.title);
+  const text = compactText(question);
+  if (!title || !text.includes(title)) return 0;
+  return 1000 + title.length;
+}
+
+async function resolveQuestionTask(question, taskId = null) {
+  const normalizedTaskId = normalizeTaskId(taskId);
+  if (normalizedTaskId) {
+    const [[row]] = await getPool().query(
+      'SELECT * FROM tasks WHERE id = ? AND deleted_at IS NULL',
+      [normalizedTaskId],
+    );
+    return row || null;
+  }
+  const [rows] = await getPool().query(
+    'SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY updated_at DESC, id DESC LIMIT 200',
+  );
+  return rows
+    .map((row) => ({ row, score: taskTitleMatchScore(row, question) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score)[0]?.row || null;
+}
+
+async function taskDetailContext(question, options = {}) {
+  const task = await resolveQuestionTask(question, options.taskId);
+  if (!task) return null;
+  const taskHit = withSourceReason(
+    withMatchedFields(taskNode(task, 1), ['任务标题', '任务状态', '任务进度'], 1),
+    '任务标题匹配',
+  );
+  const [logRows] = await getPool().query(
+    `
+      SELECT l.*, t.title AS task_title
+      FROM work_logs l
+      JOIN tasks t ON t.id = l.task_id
+      WHERE l.task_id = ? AND l.deleted_at IS NULL
+      ORDER BY l.log_date DESC, l.id DESC
+      LIMIT 8
+    `,
+    [task.id],
+  );
+  const [noteRows] = await getPool().query(
+    `
+      SELECT n.*, t.title AS task_title
+      FROM task_notes n
+      JOIN tasks t ON t.id = n.task_id
+      WHERE n.task_id = ? AND n.deleted_at IS NULL
+      ORDER BY n.updated_at DESC, n.id DESC
+      LIMIT 5
+    `,
+    [task.id],
+  );
+  const [attachmentRows] = await getPool().query(
+    `
+      SELECT a.*, t.title AS task_title, t.title AS owner_title, c.text AS cached_text
+      FROM task_attachments a
+      JOIN tasks t ON t.id = a.task_id
+      LEFT JOIN attachment_text_cache c
+        ON c.attachment_kind = 'task' AND c.attachment_id = a.id
+      WHERE a.task_id = ? AND a.deleted_at IS NULL
+      ORDER BY a.created_at DESC, a.id DESC
+      LIMIT 6
+    `,
+    [task.id],
+  );
+  const logs = logRows.map((row) => withSourceReason(
+    withMatchedFields(logNode(row, 0.9), ['关联任务', '日志内容'], 0.9),
+    '该任务的最近日志',
+  ));
+  const notes = noteRows.map((row) => withSourceReason(
+    withMatchedFields(noteNode(row, 0.78), ['关联任务'], 0.78),
+    '关联任务笔记',
+  ));
+  const attachments = attachmentRows.map((row) => withSourceReason(
+    withMatchedFields(attachmentNode(row, 'task_attachment', 'task_id', 0.76), ['关联任务'], 0.76),
+    '任务附件',
+  ));
+  return { task, taskHit, logs, notes, attachments };
+}
+
+async function answerTaskProgress(question, options = {}) {
+  const intent = classifyAiQueryIntent(question);
+  if (/下一步|建议|复盘|分析|风险|计划|提取|应该|怎么做/.test(String(question || ''))) return null;
+  if (intent !== 'task_progress' && intent !== 'task_note' && !options.taskId) return null;
+  const detail = await taskDetailContext(question, options);
+  if (!detail) return null;
+  const { task, taskHit, logs, notes, attachments } = detail;
+  const hits = [taskHit, ...logs, ...notes, ...attachments];
+  const latestLog = logs[0]?.metadata;
+  const nextSteps = uniqueValues(logs.map((hit) => hit.metadata?.nextStep).filter(Boolean));
+  const progress = Math.max(0, Math.min(100, Number(task.progress || 0)));
+  const logItems = logs.slice(0, 4).map((hit, index) => (
+    `<li><strong>${escapeHtml(hit.metadata.logDate || '')}</strong> ${escapeHtml(hit.metadata.content || '')} <em>[${index + 2}]</em></li>`
+  )).join('');
+  return {
+    answer: [
+      '<section class="ai-fact-panel">',
+      '<h3>数据库事实</h3>',
+      `<p><strong>${escapeHtml(task.title)}</strong> 当前为“${escapeHtml(statusLabels[task.status] || task.status)}”，进度 <strong>${progress}%</strong>。[1]</p>`,
+      '<dl>',
+      `<dt>优先级</dt><dd>${escapeHtml(priorityLabels[task.priority] || task.priority || '未设置')}</dd>`,
+      `<dt>截止日期</dt><dd>${escapeHtml(task.due_date || '未设置')}</dd>`,
+      `<dt>任务说明</dt><dd>${escapeHtml(task.description || '未填写')}</dd>`,
+      `<dt>日志数量</dt><dd>${logs.length}</dd>`,
+      `<dt>任务笔记</dt><dd>${notes.length}</dd>`,
+      `<dt>任务附件</dt><dd>${attachments.length}</dd>`,
+      '</dl>',
+      `<p><progress value="${progress}" max="100">${progress}%</progress></p>`,
+      '</section>',
+      logItems ? `<section class="ai-data-section"><h3>最近日志</h3><ul>${logItems}</ul></section>` : '',
+      nextSteps.length ? `<section class="ai-data-section"><h3>数据库中的下一步</h3><ul>${nextSteps.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul></section>` : '',
+      !latestLog ? '<section class="ai-data-section"><p>这个任务暂时没有工作日志。</p></section>' : '',
+    ].filter(Boolean).join(''),
+    sources: hits.map(toSource),
+    grounded: true,
+    intent: 'task_progress',
+    facts: [{
+      type: 'task_detail',
+      id: Number(task.id),
+      title: task.title,
+      status: task.status,
+      progress,
+      logCount: logs.length,
+      noteCount: notes.length,
+      attachmentCount: attachments.length,
+    }],
+    suggestions: [],
+    actionRequests: [],
+  };
+}
+
+async function answerAttachmentQuestion(question, options = {}) {
+  if (classifyAiQueryIntent(question) !== 'attachment_search') return null;
+  let hits = (await keywordHits(question, { ...options, limit: 10 }))
+    .filter((hit) => hitEntityType(hit).endsWith('_attachment'));
+  if (!hits.length) {
+    const taskId = normalizeTaskId(options.taskId);
+    const params = [];
+    const taskFilter = taskId ? 'AND t.id = ?' : '';
+    if (taskId) params.push(taskId);
+    const [rows] = await getPool().query(
+      `
+        SELECT a.*, t.title AS task_title, t.title AS owner_title, c.text AS cached_text
+        FROM task_attachments a
+        JOIN tasks t ON t.id = a.task_id
+        LEFT JOIN attachment_text_cache c
+          ON c.attachment_kind = 'task' AND c.attachment_id = a.id
+        WHERE a.deleted_at IS NULL AND t.deleted_at IS NULL ${taskFilter}
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT 8
+      `,
+      params,
+    );
+    hits = rows.map((row) => withMatchedFields(
+      attachmentNode(row, 'task_attachment', 'task_id', 0.55),
+      ['最近任务附件'],
+      0.55,
+    ));
+  }
+  if (!hits.length) return null;
+  const relevantHits = dedupeHits(hits).slice(0, 8).map((hit) => withSourceReason(hit, '附件名称或识别文字匹配'));
+  const cards = relevantHits.map((hit, index) => {
+    const metadata = hit.metadata || {};
+    const content = cleanText(hit.text.replace(/^附件：[^ ]+\s*/, '')).slice(0, 420);
+    return [
+      '<section class="ai-file-panel">',
+      `<h3>${escapeHtml(metadata.fileName || metadata.title || `附件 ${index + 1}`)}</h3>`,
+      `<p>${escapeHtml(content || '数据库中没有可用的附件文字。')}</p>`,
+      `<small>[${index + 1}]</small>`,
+      '</section>',
+    ].join('');
+  }).join('');
+  return {
+    answer: `<section class="ai-fact-panel"><h3>数据库事实</h3><p>找到 <strong>${relevantHits.length}</strong> 个相关附件。</p></section>${cards}`,
+    sources: relevantHits.map(toSource),
+    grounded: true,
+    intent: 'attachment_search',
+    facts: relevantHits.map((hit) => ({
+      type: 'attachment',
+      id: Number(hit.metadata.entityId),
+      fileName: hit.metadata.fileName,
+      parser: hit.metadata.parser || null,
+    })),
+    suggestions: [],
+    actionRequests: [],
+  };
+}
+
+async function answerDeterministicQuestion(question, options = {}) {
+  return (await answerIncompleteTasks(question, options))
+    || (await answerTaskOverview(question, options))
+    || (await answerLogPeriod(question, options))
+    || (await answerTaskProgress(question, options))
+    || (await answerAttachmentQuestion(question, options));
 }
 
 function hitEntityType(hit) {
@@ -793,7 +1308,7 @@ function hasStrongKeywordMatch(hit, keywords) {
 
 function filterHitsForIntent(hits, question, intent = classifyAiQueryIntent(question)) {
   const dedupedHits = dedupeHits(hits);
-  if (intent === 'note') {
+  if (isNoteLikeIntent(intent)) {
     return dedupedHits
       .filter((hit) => noteSourceTypes.has(hitEntityType(hit)))
       .map((hit) => withSourceReason(hit, defaultSourceReason(hitEntityType(hit))));
@@ -833,39 +1348,55 @@ function filterHitsForIntent(hits, question, intent = classifyAiQueryIntent(ques
 
 async function retrieveWorkspaceHits(question, options = {}) {
   const intent = options.intent || classifyAiQueryIntent(question);
+  const limit = normalizeLimit(options.limit, 8, 20);
+  const keywordResults = filterHitsForIntent(await keywordHits(question, { ...options, limit }), question, intent);
+  let semanticResults = [];
   try {
-    const hits = filterHitsForIntent(await retrieveRelevantNodes(question, options), question, intent);
-    if (hits.length) return hits;
+    semanticResults = filterHitsForIntent(
+      await retrieveRelevantNodes(question, { ...options, limit }),
+      question,
+      intent,
+    ).map((hit) => withSourceReason(hit, hit.metadata?.reason || '语义内容匹配'));
   } catch {
-    // Fall back to MySQL keyword/recent context when Qdrant or embeddings are not configured.
+    // Semantic search is optional; MySQL remains the primary source of truth.
   }
 
-  const keywordResults = filterHitsForIntent(await keywordHits(question, options), question, intent);
-  if (keywordResults.length) return keywordResults;
+  const combined = dedupeHits([...keywordResults, ...semanticResults]).slice(0, limit);
+  if (combined.length) return combined;
   if (isTaskLikeIntent(intent)) return [];
-  return filterHitsForIntent(await recentHits(options), question, intent);
+  if (isNoteLikeIntent(intent)) {
+    return filterHitsForIntent(await recentHits({ ...options, limit }), question, intent);
+  }
+  if (intent !== 'general') return [];
+  return filterHitsForIntent(await recentHits({ ...options, limit }), question, intent);
 }
 
 async function createAnswerContext(question, options = {}) {
   const intent = options.intent || classifyAiQueryIntent(question);
   const hits = await retrieveWorkspaceHits(question, { ...options, intent, limit: normalizeLimit(options.limit, 6, 12) });
+  const additionalContext = String(options.additionalContext || '').trim();
+  const databaseContext = hits
+    .map((hit, index) => `[${index + 1}] ${hit.text.slice(0, 1800)}`)
+    .join('\n\n');
   return {
     intent,
     hits,
     sources: hits.map(toSource),
-    context: hits
-      .map((hit, index) => `[${index + 1}] ${hit.text.slice(0, 1800)}`)
-      .join('\n\n'),
+    context: [
+      databaseContext,
+      additionalContext ? `[微信临时资料]\n${additionalContext.slice(0, 12000)}` : '',
+    ].filter(Boolean).join('\n\n'),
+    hasAdditionalContext: Boolean(additionalContext),
   };
 }
 
-function buildAnswerMessages(question, context, history = []) {
+function buildAnswerMessages(question, context, history = [], intent = 'general') {
   return [
     { role: 'system', content: workspaceAssistantPrompt },
     ...normalizeChatHistory(history),
     {
       role: 'user',
-      content: `当前问题：${question}\n\n任务台资料：\n${context}`,
+      content: `问题意图：${intent}\n当前问题：${question}\n\n任务台数据库资料：\n${context}\n\n请先给出“数据库事实”；如果问题需要判断、规划或下一步，再单独给出“AI 建议”。`,
     },
   ];
 }
@@ -908,58 +1439,85 @@ async function readOpenAiStream(body, onDelta) {
 
 export async function searchWorkspace(question, options = {}) {
   const intent = options.intent || classifyAiQueryIntent(question);
-  if (isIncompleteTaskQuestion(question)) {
-    const hits = await incompleteTaskHits(options);
-    return hits.map(toSource);
-  }
+  const deterministic = await answerDeterministicQuestion(question, { ...options, intent });
+  if (deterministic) return deterministic.sources;
   const hits = await retrieveWorkspaceHits(question, { ...options, intent });
   return hits.map(toSource);
 }
 
 export async function answerWorkspace(question, options = {}) {
-  const taskAnswer = await answerIncompleteTasks(question, options);
-  if (taskAnswer) return taskAnswer;
+  const deterministic = options.additionalContext
+    ? null
+    : await answerDeterministicQuestion(question, options);
+  if (deterministic) return deterministic;
 
-  const { hits, sources, context, intent } = await createAnswerContext(question, options);
-  if (!hits.length) {
+  const { hits, sources, context, intent, hasAdditionalContext } = await createAnswerContext(question, options);
+  if (!hits.length && !hasAdditionalContext) {
     return {
       answer: isTaskLikeIntent(intent) ? noTaskContextAnswer : noWorkspaceContextAnswer,
       sources: [],
       grounded: false,
+      intent,
+      facts: [],
+      suggestions: [],
+      actionRequests: [],
     };
   }
 
   const response = await getChatModel().chat({
-    messages: buildAnswerMessages(question, context, options.messages),
+    messages: buildAnswerMessages(question, context, options.messages, intent),
   });
   const answer = messageToText(response.message.content) || emptyModelAnswer;
-  return { answer, sources, grounded: true };
+  return {
+    answer,
+    sources,
+    grounded: Boolean(hits.length || hasAdditionalContext),
+    intent,
+    facts: sources.map((source) => ({
+      type: source.entityType,
+      id: source.entityId,
+      reason: source.reason,
+      matchedFields: source.matchedFields,
+    })),
+    suggestions: [],
+    actionRequests: [],
+  };
 }
 
 export async function streamAnswerWorkspace(question, options = {}, handlers = {}) {
-  const taskAnswer = await answerIncompleteTasks(question, options);
-  if (taskAnswer) {
-    handlers.onSources?.(taskAnswer.sources);
-    handlers.onDelta?.(taskAnswer.answer);
-    handlers.onDone?.({ grounded: taskAnswer.grounded });
-    return taskAnswer;
+  const deterministic = options.additionalContext
+    ? null
+    : await answerDeterministicQuestion(question, options);
+  if (deterministic) {
+    handlers.onIntent?.(deterministic.intent);
+    handlers.onSources?.(deterministic.sources);
+    handlers.onDelta?.(deterministic.answer);
+    handlers.onDone?.({
+      grounded: deterministic.grounded,
+      intent: deterministic.intent,
+      facts: deterministic.facts,
+      suggestions: deterministic.suggestions,
+      actionRequests: deterministic.actionRequests,
+    });
+    return deterministic;
   }
 
-  const { hits, sources, context, intent } = await createAnswerContext(question, options);
+  const { hits, sources, context, intent, hasAdditionalContext } = await createAnswerContext(question, options);
+  handlers.onIntent?.(intent);
   handlers.onSources?.(sources);
 
-  if (!hits.length) {
+  if (!hits.length && !hasAdditionalContext) {
     const answer = isTaskLikeIntent(intent) ? noTaskContextAnswer : noWorkspaceContextAnswer;
     handlers.onDelta?.(answer);
-    handlers.onDone?.({ grounded: false });
-    return { answer, sources: [], grounded: false };
+    handlers.onDone?.({ grounded: false, intent, facts: [], suggestions: [], actionRequests: [] });
+    return { answer, sources: [], grounded: false, intent, facts: [], suggestions: [], actionRequests: [] };
   }
 
   const payload = {
     model: config.ai.litellm.chatModel,
     temperature: 0.2,
     stream: true,
-    messages: buildAnswerMessages(question, context, options.messages),
+    messages: buildAnswerMessages(question, context, options.messages, intent),
   };
 
   if (!config.ai.litellm.apiKey || !config.ai.litellm.chatModel) {
@@ -992,7 +1550,14 @@ export async function streamAnswerWorkspace(question, options = {}, handlers = {
     const fallback = await answerWorkspace(question, options);
     handlers.onSources?.(fallback.sources);
     handlers.onDelta?.(fallback.answer);
-    handlers.onDone?.({ grounded: fallback.grounded, fallback: true });
+    handlers.onDone?.({
+      grounded: fallback.grounded,
+      intent: fallback.intent,
+      facts: fallback.facts,
+      suggestions: fallback.suggestions,
+      actionRequests: fallback.actionRequests,
+      fallback: true,
+    });
     return fallback;
   }
 
@@ -1000,6 +1565,13 @@ export async function streamAnswerWorkspace(question, options = {}, handlers = {
     answer = emptyModelAnswer;
     handlers.onDelta?.(answer);
   }
-  handlers.onDone?.({ grounded: true });
-  return { answer, sources, grounded: true };
+  const facts = sources.map((source) => ({
+    type: source.entityType,
+    id: source.entityId,
+    reason: source.reason,
+    matchedFields: source.matchedFields,
+  }));
+  const grounded = Boolean(hits.length || hasAdditionalContext);
+  handlers.onDone?.({ grounded, intent, facts, suggestions: [], actionRequests: [] });
+  return { answer, sources, grounded, intent, facts, suggestions: [], actionRequests: [] };
 }

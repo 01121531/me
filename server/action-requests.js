@@ -2,6 +2,18 @@ import { getPool } from './db.js';
 import { publishWorkspaceEvent } from './events.js';
 import { scheduleIndexJob } from './indexing.js';
 import {
+  queueAttachmentTextExtraction,
+  scheduleAttachmentTextExtraction,
+} from './ai/attachment-cache.js';
+import { activeStorageProvider, persistUploadedFile } from './storage.js';
+import { promises as fsp } from 'fs';
+import {
+  markTemporaryMediaSaved,
+  sanitizeWeixinFileName,
+  temporaryMediaPath,
+} from './weixin/temp-media.js';
+import crypto from 'crypto';
+import {
   mapLog,
   mapNote,
   mapTask,
@@ -24,6 +36,9 @@ const ACTION_TYPES = new Set([
   'update_log',
   'create_note',
   'update_note',
+  'attach_weixin_media_to_task',
+  'attach_weixin_media_to_note',
+  'create_note_with_weixin_media',
 ]);
 const REQUEST_STATUSES = new Set(['pending', 'applied', 'rejected', 'failed']);
 
@@ -108,6 +123,9 @@ function actionTitle(actionType, payload = {}) {
   if (actionType === 'update_log') return `更新日志 #${payload.logId}`;
   if (actionType === 'create_note') return `新增${payload.taskId ? `任务 #${payload.taskId} 的` : '独立'}笔记`;
   if (actionType === 'update_note') return `更新笔记 #${payload.noteId}`;
+  if (actionType === 'attach_weixin_media_to_task') return `保存微信附件到任务 #${payload.taskId}`;
+  if (actionType === 'attach_weixin_media_to_note') return `保存微信附件到笔记 #${payload.noteId}`;
+  if (actionType === 'create_note_with_weixin_media') return `将微信附件保存为笔记：${payload.title || '未命名笔记'}`;
   return actionType;
 }
 
@@ -117,6 +135,9 @@ function targetForAction(actionType, payload = {}) {
   if (actionType === 'update_log') return { targetType: 'logs', targetId: payload.logId };
   if (actionType === 'create_note') return { targetType: payload.taskId ? 'tasks' : 'notes', targetId: payload.taskId || null };
   if (actionType === 'update_note') return { targetType: 'notes', targetId: payload.noteId };
+  if (actionType === 'attach_weixin_media_to_task') return { targetType: 'tasks', targetId: payload.taskId };
+  if (actionType === 'attach_weixin_media_to_note') return { targetType: 'notes', targetId: payload.noteId };
+  if (actionType === 'create_note_with_weixin_media') return { targetType: 'notes', targetId: null };
   return { targetType: actionType === 'create_task' ? 'tasks' : null, targetId: null };
 }
 
@@ -407,6 +428,120 @@ async function updateNote(connection, payload) {
   };
 }
 
+async function persistWeixinMediaAttachment(connection, payload, ownerKind) {
+  const tempMediaId = String(payload.tempMediaId || '').trim();
+  if (!tempMediaId) throw new Error('微信临时附件 ID 不能为空。');
+  const [mediaRows] = await connection.query(
+    "SELECT * FROM weixin_temp_media WHERE id = ? AND status = 'temporary' FOR UPDATE",
+    [tempMediaId],
+  );
+  const media = mediaRows[0];
+  if (!media) throw new Error('微信临时附件不存在、已保存或已清理。');
+
+  const ownerId = ownerKind === 'task'
+    ? normalizePositiveId(payload.taskId, 'taskId')
+    : normalizePositiveId(payload.noteId, 'noteId');
+  const ownerTable = ownerKind === 'task' ? 'tasks' : 'task_notes';
+  const [ownerRows] = await connection.query(
+    `SELECT id FROM ${ownerTable} WHERE id = ? AND deleted_at IS NULL`,
+    [ownerId],
+  );
+  if (!ownerRows.length) throw new Error(ownerKind === 'task' ? '任务不存在。' : '笔记不存在。');
+
+  const originalName = sanitizeWeixinFileName(media.original_name);
+  const storedName = `${Date.now()}-${crypto.randomUUID()}-${originalName}`;
+  const attachmentKind = ownerKind === 'task' ? 'task-attachments' : 'note-attachments';
+  const provider = activeStorageProvider();
+  const sourcePath = temporaryMediaPath(media);
+  const stagingPath = `${sourcePath}.approval-${crypto.randomUUID()}`;
+  await fsp.copyFile(sourcePath, stagingPath);
+  let storageKey;
+  try {
+    storageKey = await persistUploadedFile({
+      path: stagingPath,
+      filename: storedName,
+      originalname: originalName,
+      mimetype: media.mime_type,
+      size: Number(media.file_size || 0),
+    }, attachmentKind, ownerId);
+  } finally {
+    await fsp.unlink(stagingPath).catch(() => {});
+  }
+  const table = ownerKind === 'task' ? 'task_attachments' : 'note_attachments';
+  const ownerColumn = ownerKind === 'task' ? 'task_id' : 'note_id';
+  const [result] = await connection.query(
+    `
+      INSERT INTO ${table}
+        (${ownerColumn}, original_name, stored_name, relative_path, storage_provider, storage_key, mime_type, file_size, note)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    [
+      ownerId,
+      originalName,
+      storedName,
+      provider === 'local' ? `uploads/${storageKey}` : storageKey,
+      provider,
+      storageKey,
+      media.mime_type || 'application/octet-stream',
+      Number(media.file_size || 0),
+      toNullableText(payload.note) || '来自微信对话',
+    ],
+  );
+  await markTemporaryMediaSaved(connection, tempMediaId);
+  return {
+    id: Number(result.insertId),
+    ownerId,
+    ownerKind,
+    originalName,
+    mimeType: media.mime_type || 'application/octet-stream',
+    cleanupFilePath: sourcePath,
+  };
+}
+
+async function attachWeixinMediaToTask(connection, payload) {
+  const attachment = await persistWeixinMediaAttachment(connection, payload, 'task');
+  const { cleanupFilePath, ...result } = attachment;
+  return {
+    result,
+    affected: { targetType: 'task-attachments', targetId: attachment.id, operation: 'upsert' },
+    cleanupFilePath,
+  };
+}
+
+async function attachWeixinMediaToNote(connection, payload) {
+  const attachment = await persistWeixinMediaAttachment(connection, payload, 'note');
+  const { cleanupFilePath, ...result } = attachment;
+  return {
+    result,
+    affected: { targetType: 'note-attachments', targetId: attachment.id, operation: 'upsert' },
+    cleanupFilePath,
+  };
+}
+
+async function createNoteWithWeixinMedia(connection, payload) {
+  const createdNote = await createNote(connection, {
+    title: payload.title,
+    content: payload.content || '来自微信的临时附件。',
+    contentJson: payload.contentJson,
+    category: null,
+    taskId: payload.taskId || null,
+  });
+  const noteId = createdNote.result.id;
+  const attachment = await persistWeixinMediaAttachment(connection, {
+    ...payload,
+    noteId,
+  }, 'note');
+  const { cleanupFilePath, ...attachmentResult } = attachment;
+  return {
+    result: { note: createdNote.result, attachment: attachmentResult },
+    affected: [
+      createdNote.affected,
+      { targetType: 'note-attachments', targetId: attachment.id, operation: 'upsert' },
+    ],
+    cleanupFilePath,
+  };
+}
+
 async function applyAction(connection, action) {
   const payload = parseJsonField(action.payload) || {};
   if (action.action_type === 'create_task') return createTask(connection, payload);
@@ -415,6 +550,9 @@ async function applyAction(connection, action) {
   if (action.action_type === 'update_log') return updateLog(connection, payload);
   if (action.action_type === 'create_note') return createNote(connection, payload);
   if (action.action_type === 'update_note') return updateNote(connection, payload);
+  if (action.action_type === 'attach_weixin_media_to_task') return attachWeixinMediaToTask(connection, payload);
+  if (action.action_type === 'attach_weixin_media_to_note') return attachWeixinMediaToNote(connection, payload);
+  if (action.action_type === 'create_note_with_weixin_media') return createNoteWithWeixinMedia(connection, payload);
   throw new Error(`Unsupported action type: ${action.action_type}`);
 }
 
@@ -422,6 +560,7 @@ export async function approveActionRequest(id, { decidedBy = 'local' } = {}) {
   const actionId = normalizePositiveId(id, 'id');
   const connection = await getPool().getConnection();
   let affected = null;
+  let cleanupFilePath = '';
   try {
     await connection.beginTransaction();
     const [rows] = await connection.query('SELECT * FROM mcp_action_requests WHERE id = ? FOR UPDATE', [actionId]);
@@ -431,6 +570,7 @@ export async function approveActionRequest(id, { decidedBy = 'local' } = {}) {
 
     const applied = await applyAction(connection, action);
     affected = applied.affected;
+    cleanupFilePath = applied.cleanupFilePath || '';
     await connection.query(
       `
         UPDATE mcp_action_requests
@@ -440,6 +580,7 @@ export async function approveActionRequest(id, { decidedBy = 'local' } = {}) {
       [JSON.stringify(applied.result), decidedBy, actionId],
     );
     await connection.commit();
+    if (cleanupFilePath) await fsp.unlink(cleanupFilePath).catch(() => {});
   } catch (error) {
     await connection.rollback();
     await getPool().query(
@@ -456,12 +597,27 @@ export async function approveActionRequest(id, { decidedBy = 'local' } = {}) {
 
   const action = await getActionRequestById(actionId);
   if (affected && action?.status === 'applied') {
-    scheduleIndexJob({
-      targetType: affected.targetType,
-      targetId: affected.targetId,
-      operation: affected.operation,
-      reason: `MCP approval ${action.actionType}`,
-    });
+    const affectedItems = Array.isArray(affected) ? affected : [affected];
+    for (const item of affectedItems) {
+      scheduleIndexJob({
+        targetType: item.targetType,
+        targetId: item.targetId,
+        operation: item.operation,
+        reason: `MCP approval ${action.actionType}`,
+      });
+      const attachmentKind = {
+        'task-attachments': 'task',
+        'note-attachments': 'note',
+        'log-attachments': 'log',
+      }[item.targetType];
+      if (attachmentKind) {
+        queueAttachmentTextExtraction(attachmentKind, item.targetId)
+          .then(() => scheduleAttachmentTextExtraction(attachmentKind, item.targetId))
+          .catch((error) => {
+            console.error(`Failed to queue approved attachment ${attachmentKind}:${item.targetId}:`, error.message);
+          });
+      }
+    }
   }
   publishWorkspaceEvent({
     action: `MCP action ${action?.status || 'updated'}`,

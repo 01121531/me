@@ -25,6 +25,7 @@ import { ensureDatabase, getPool } from './db.js';
 import { openEventStream } from './events.js';
 import { getIndexStatus, scheduleIndexJob } from './indexing.js';
 import { formatNoteWithAi, streamFormatNoteWithAi } from './ai/note-format.js';
+import { planAiActionRequest } from './ai/action-planner.js';
 import { generateLogDraftFromNote } from './ai/log-draft.js';
 import { summarizeReportWithAi } from './ai/report-summary.js';
 import { summarizeTaskWithAi } from './ai/task-summary.js';
@@ -71,6 +72,15 @@ import {
   removeStoredAttachment,
   sendStoredAttachment,
 } from './storage.js';
+import {
+  disconnectWeixin,
+  getWeixinStatus,
+  initializeWeixinService,
+  openWeixinEventStream,
+  shutdownWeixinService,
+  startWeixinLogin,
+  submitWeixinVerifyCode,
+} from './weixin/service.js';
 import {
   mapAttachment,
   mapLog,
@@ -951,12 +961,21 @@ function mapAiConversation(row) {
 }
 
 function mapAiMessage(row) {
+  const storedMetadata = parseJsonValue(row.sources_json, []);
+  const metadata = Array.isArray(storedMetadata)
+    ? { sources: storedMetadata }
+    : (storedMetadata || {});
   return {
     id: Number(row.id),
     conversationId: Number(row.conversation_id),
     role: row.role,
     content: row.content || '',
-    sources: parseJsonValue(row.sources_json, []),
+    sources: Array.isArray(metadata.sources) ? metadata.sources : [],
+    intent: metadata.intent || '',
+    grounded: metadata.grounded,
+    facts: Array.isArray(metadata.facts) ? metadata.facts : [],
+    suggestions: Array.isArray(metadata.suggestions) ? metadata.suggestions : [],
+    actionRequests: Array.isArray(metadata.actionRequests) ? metadata.actionRequests : [],
     createdAt: row.created_at,
   };
 }
@@ -992,7 +1011,15 @@ async function ensureAiConversation({ conversationId, scope, taskId, localKey, t
   return getAiConversation(result.insertId);
 }
 
-async function saveAiExchange(conversationId, question, answer, sources = []) {
+async function saveAiExchange(conversationId, question, answer, sources = [], metadata = {}) {
+  const assistantMetadata = {
+    sources: sources || [],
+    intent: metadata.intent || '',
+    grounded: metadata.grounded,
+    facts: Array.isArray(metadata.facts) ? metadata.facts : [],
+    suggestions: Array.isArray(metadata.suggestions) ? metadata.suggestions : [],
+    actionRequests: Array.isArray(metadata.actionRequests) ? metadata.actionRequests : [],
+  };
   await getPool().query(
     'INSERT INTO ai_messages (conversation_id, role, content, sources_json) VALUES (?, ?, ?, ?), (?, ?, ?, ?)',
     [
@@ -1003,7 +1030,7 @@ async function saveAiExchange(conversationId, question, answer, sources = []) {
       conversationId,
       'assistant',
       answer || '',
-      JSON.stringify(sources || []),
+      JSON.stringify(assistantMetadata),
     ],
   );
 
@@ -1033,7 +1060,27 @@ app.get('/api/system/checks', asyncRoute(async (_req, res) => {
 }));
 
 app.get('/api/settings', asyncRoute(async (_req, res) => {
-  res.json(getSettingsSnapshot());
+  res.json({ ...getSettingsSnapshot(), weixin: getWeixinStatus() });
+}));
+
+app.get('/api/settings/weixin', asyncRoute(async (_req, res) => {
+  res.json(getWeixinStatus());
+}));
+
+app.get('/api/settings/weixin/events', (req, res) => {
+  openWeixinEventStream(req, res);
+});
+
+app.post('/api/settings/weixin/login', asyncRoute(async (_req, res) => {
+  res.status(202).json(await startWeixinLogin());
+}));
+
+app.post('/api/settings/weixin/verify', asyncRoute(async (req, res) => {
+  res.json(await submitWeixinVerifyCode(req.body?.code));
+}));
+
+app.post('/api/settings/weixin/disconnect', asyncRoute(async (_req, res) => {
+  res.json(await disconnectWeixin());
 }));
 
 app.patch('/api/settings/ai', asyncRoute(async (req, res) => {
@@ -1182,7 +1229,11 @@ app.post('/api/ai/ask', asyncRoute(async (req, res) => {
   if (!question) return res.status(400).json({ message: '请输入问题。' });
   const taskId = req.body.taskId ? Number(req.body.taskId) : null;
   try {
-    res.json(await answerWorkspace(question, { taskId }));
+    const actionPlan = await planAiActionRequest(question, {
+      taskId,
+      requestedBy: req.auth?.id || req.auth?.type || 'local-ai',
+    });
+    res.json(actionPlan || await answerWorkspace(question, { taskId, messages: req.body.messages }));
   } catch (error) {
     console.error('AI answer failed:', error.message);
     res.status(503).json({ message: '智能问答暂不可用，请检查索引 Worker、Qdrant 与 LiteLLM 配置。' });
@@ -1368,18 +1419,49 @@ app.post('/api/ai/ask-stream', asyncRoute(async (req, res) => {
   try {
     writeSseEvent(res, 'conversation', conversation);
     let finalPayload = {};
-    const result = await streamAnswerWorkspace(question, {
+    const actionPlan = await planAiActionRequest(question, {
       taskId,
-      messages: req.body.messages,
-      signal: controller.signal,
-    }, {
-      onSources: (sources) => writeSseEvent(res, 'sources', sources),
-      onDelta: (delta) => writeSseEvent(res, 'delta', delta),
-      onDone: (payload) => {
-        finalPayload = payload || {};
-      },
+      requestedBy: req.auth?.id || req.auth?.type || 'local-ai',
     });
-    const savedConversation = await saveAiExchange(conversation.id, question, result.answer, result.sources);
+    let result;
+    if (actionPlan) {
+      result = actionPlan;
+      writeSseEvent(res, 'intent', actionPlan.intent);
+      writeSseEvent(res, 'sources', actionPlan.sources || []);
+      writeSseEvent(res, 'actionRequests', actionPlan.actionRequests || []);
+      writeSseEvent(res, 'delta', actionPlan.answer);
+      finalPayload = {
+        grounded: actionPlan.grounded,
+        intent: actionPlan.intent,
+        facts: actionPlan.facts,
+        suggestions: actionPlan.suggestions,
+        actionRequests: actionPlan.actionRequests,
+      };
+    } else {
+      result = await streamAnswerWorkspace(question, {
+        taskId,
+        messages: req.body.messages,
+        signal: controller.signal,
+      }, {
+        onIntent: (intent) => writeSseEvent(res, 'intent', intent),
+        onSources: (sources) => writeSseEvent(res, 'sources', sources),
+        onActionRequests: (actions) => writeSseEvent(res, 'actionRequests', actions),
+        onDelta: (delta) => writeSseEvent(res, 'delta', delta),
+        onDone: (payload) => {
+          finalPayload = payload || {};
+        },
+      });
+    }
+    const savedConversation = await saveAiExchange(
+      conversation.id,
+      question,
+      result.answer,
+      result.sources,
+      {
+        ...finalPayload,
+        actionRequests: result.actionRequests || finalPayload.actionRequests || [],
+      },
+    );
     writeSseEvent(res, 'done', {
       ...finalPayload,
       conversation: savedConversation,
@@ -3337,6 +3419,7 @@ ensureDatabase()
     await initializeAuth();
     await initializeStorage();
     await repairAttachmentFileNames();
+    await initializeWeixinService();
     app.listen(config.port, () => {
       console.log(`API server ready at http://127.0.0.1:${config.port}`);
     });
@@ -3345,3 +3428,11 @@ ensureDatabase()
     console.error('Failed to start server:', error);
     process.exit(1);
   });
+
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.once(signal, () => {
+    shutdownWeixinService()
+      .catch(() => {})
+      .finally(() => process.exit(0));
+  });
+}

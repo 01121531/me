@@ -408,6 +408,41 @@ async function migrate(db) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS weixin_temp_media (
+      id CHAR(36) NOT NULL,
+      account_id VARCHAR(191) NOT NULL,
+      peer_id VARCHAR(191) NOT NULL,
+      original_name VARCHAR(255) NOT NULL,
+      stored_path VARCHAR(700) NOT NULL,
+      mime_type VARCHAR(120) NOT NULL DEFAULT 'application/octet-stream',
+      file_size BIGINT UNSIGNED NOT NULL DEFAULT 0,
+      extracted_text MEDIUMTEXT NULL,
+      status ENUM('temporary', 'saved', 'expired') NOT NULL DEFAULT 'temporary',
+      expires_at TIMESTAMP NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (id),
+      INDEX idx_weixin_temp_peer_created (account_id, peer_id, created_at),
+      INDEX idx_weixin_temp_expiry (status, expires_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `);
+
+  await db.query(`
+    ALTER TABLE mcp_action_requests
+    MODIFY COLUMN action_type ENUM(
+      'create_task',
+      'update_task',
+      'create_log',
+      'update_log',
+      'create_note',
+      'update_note',
+      'attach_weixin_media_to_task',
+      'attach_weixin_media_to_note',
+      'create_note_with_weixin_media'
+    ) NOT NULL
+  `);
+
   await db.query("UPDATE tasks SET progress = 0 WHERE status = 'todo' AND progress <> 0");
   await db.query("UPDATE tasks SET progress = 100 WHERE status = 'done' AND progress <> 100");
 

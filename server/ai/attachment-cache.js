@@ -329,6 +329,16 @@ async function extractTextForAttachment(attachment, buffer) {
   };
 }
 
+export async function extractTemporaryAttachmentText({ originalName, mimeType, buffer }) {
+  if (!Buffer.isBuffer(buffer) || !buffer.length) {
+    return { parser: null, text: '', pageCount: null, truncated: false };
+  }
+  return extractTextForAttachment({
+    original_name: String(originalName || '微信附件'),
+    mime_type: String(mimeType || 'application/octet-stream'),
+  }, buffer);
+}
+
 export async function extractAndCacheAttachmentText(kind, id, { force = false } = {}) {
   const normalizedKind = normalizeKind(kind);
   if (!normalizedKind) throw new Error('Invalid attachment kind.');

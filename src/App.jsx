@@ -49,6 +49,9 @@ import {
   Link2,
   Paperclip,
   Upload,
+  MessageCircle,
+  QrCode,
+  Unplug,
   Info,
   LayoutDashboard,
   ListFilter,
@@ -61,6 +64,7 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
+  Square,
   Sun,
   Trash2,
   X,
@@ -1348,7 +1352,7 @@ function TaskBoardApp() {
           <button
             className={actionRequests.length ? 'icon-button approval-button has-pending' : 'icon-button approval-button'}
             onClick={() => setIsApprovalsOpen(true)}
-            title="OpenClaw 审批"
+            title="AI 与外部操作审批"
           >
             <ShieldCheck size={18} />
             <span>审批</span>
@@ -2722,6 +2726,9 @@ const actionTypeLabels = {
   update_log: '编辑日志',
   create_note: '新增笔记',
   update_note: '编辑笔记',
+  attach_weixin_media_to_task: '保存微信附件到任务',
+  attach_weixin_media_to_note: '保存微信附件到笔记',
+  create_note_with_weixin_media: '保存微信附件为笔记',
 };
 
 function tagsToText(tags) {
@@ -2743,6 +2750,65 @@ function ActionPayloadSummary({ action }) {
       ['来源任务', payload.sourceTaskId ? `任务 #${payload.sourceTaskId}` : '当前 AI 建议'],
       ['来源说明', payload.sourceReason],
       ['任务说明', payload.description],
+    );
+  } else if (action.actionType === 'update_task') {
+    rows.push(
+      ['任务 ID', payload.taskId],
+      ['新标题', payload.title],
+      ['状态', statusLabels[payload.status] || payload.status],
+      ['进度', payload.progress === undefined ? '' : `${payload.progress}%`],
+      ['优先级', priorityLabels[payload.priority] || payload.priority],
+      ['截止日期', formatDate(payload.dueDate)],
+      ['任务说明', payload.description],
+      ['来源说明', payload.sourceReason],
+    );
+  } else if (action.actionType === 'create_log' || action.actionType === 'update_log') {
+    rows.push(
+      ['任务 ID', payload.taskId],
+      ['日志 ID', payload.logId],
+      ['日期', formatDate(payload.logDate)],
+      ['阶段', statusLabels[payload.stage] || payload.stage],
+      ['耗时', payload.hours === undefined ? '' : `${payload.hours} 小时`],
+      ['进度快照', payload.progressSnapshot === undefined ? '' : `${payload.progressSnapshot}%`],
+      ['日志内容', payload.content],
+      ['下一步', payload.nextStep],
+      ['来源说明', payload.sourceReason],
+    );
+  } else if (action.actionType === 'create_note' || action.actionType === 'update_note') {
+    rows.push(
+      ['任务 ID', payload.taskId],
+      ['笔记 ID', payload.noteId],
+      ['标题', payload.title],
+      ['分类', payload.category],
+      ['笔记内容', payload.content],
+      ['来源说明', payload.sourceReason],
+    );
+  } else if (action.actionType === 'attach_weixin_media_to_task') {
+    rows.push(
+      ['任务 ID', payload.taskId],
+      ['微信附件', payload.originalName],
+      ['文件大小', formatFileSize(payload.fileSize)],
+      ['附件说明', payload.note],
+      ['临时文件 ID', payload.tempMediaId],
+      ['来源说明', payload.sourceReason],
+    );
+  } else if (action.actionType === 'attach_weixin_media_to_note') {
+    rows.push(
+      ['笔记 ID', payload.noteId],
+      ['微信附件', payload.originalName],
+      ['文件大小', formatFileSize(payload.fileSize)],
+      ['附件说明', payload.note],
+      ['临时文件 ID', payload.tempMediaId],
+      ['来源说明', payload.sourceReason],
+    );
+  } else if (action.actionType === 'create_note_with_weixin_media') {
+    rows.push(
+      ['笔记标题', payload.title],
+      ['笔记内容', payload.content],
+      ['微信附件', payload.originalName],
+      ['文件大小', formatFileSize(payload.fileSize)],
+      ['临时文件 ID', payload.tempMediaId],
+      ['来源说明', payload.sourceReason],
     );
   } else {
     rows.push(
@@ -2773,10 +2839,10 @@ function ActionRequestsModal({ actions, loading, onClose, onRefresh, onApprove, 
 
   return (
     <div className="modal-backdrop">
-      <section className="approval-modal" role="dialog" aria-modal="true" aria-label="OpenClaw 审批">
+      <section className="approval-modal" role="dialog" aria-modal="true" aria-label="操作审批">
         <div className="modal-head">
           <div>
-            <h2>OpenClaw 审批</h2>
+            <h2>操作审批</h2>
             <p>AI 或外部智能体提出的写入动作会先停在这里，批准后才会修改任务台</p>
           </div>
           <button type="button" className="round-button small" onClick={onClose} title="关闭">
@@ -2848,7 +2914,14 @@ function createAiMessage(role, content = '', extra = {}) {
     role,
     content,
     sources: [],
+    intent: '',
+    grounded: undefined,
+    facts: [],
+    suggestions: [],
+    actionRequests: [],
     streaming: false,
+    error: false,
+    stopped: false,
     ...extra,
   };
 }
@@ -3245,6 +3318,7 @@ function AiSourceList({ sources = [], onOpenSource }) {
                 <em>
                   <b>{sourceTypeLabel(source)}</b>
                   {source.reason ? <b>{source.reason}</b> : null}
+                  {source.matchedFields?.length ? <b>匹配：{source.matchedFields.join('、')}</b> : null}
                 </em>
                 <small>{source.excerpt}</small>
               </span>
@@ -3275,8 +3349,8 @@ const aiText = {
   emptyHistory: '还没有历史对话。',
   rename: '重命名',
   delete: '删除',
-  startTitle: '开始一次智能检索',
-  startHint: '可以连续提问，AI 会根据任务、日志、笔记和附件资料回答。',
+  startTitle: '从当前任务台开始问',
+  startHint: '回答优先使用当前 MySQL 中的任务、日志、笔记和附件识别文字；数据库事实与 AI 建议会分开显示。',
   you: '你',
   thinking: '正在整理回答',
   sources: '查看来源',
@@ -3285,6 +3359,7 @@ const aiText = {
   deletePrefix: '删除对话“',
   deleteSuffix: '”？',
   failed: '这次回答没有成功，请稍后重试。',
+  stopped: '已停止生成',
   taskAi: '任务 AI',
   workspaceAi: 'AI 工作区',
   taskTitle: '任务智能问答',
@@ -3311,6 +3386,15 @@ const taskAiQuickPrompts = [
     label: '任务复盘',
     prompt: '请对当前任务做一份简洁复盘，使用安全 HTML 输出。请包含目标、过程摘要、已完成成果、遗留问题、可复用经验和后续建议；不要新增事实。',
   },
+];
+
+const workspaceAiQuickPrompts = [
+  { id: 'incomplete', label: '未完成任务', prompt: '我还有哪些任务没有完成？' },
+  { id: 'today-logs', label: '今日日志', prompt: '今天做了什么？请汇总今天的工作日志和耗时。' },
+  { id: 'week-progress', label: '本周进展', prompt: '本周进展怎么样？请按任务汇总本周日志和耗时。' },
+  { id: 'attachments', label: '查附件', prompt: '请帮我查找最近与任务相关的附件资料。' },
+  { id: 'notes', label: '查笔记', prompt: '请帮我查找当前笔记中的重点内容。' },
+  { id: 'next-steps', label: '生成下一步', prompt: '请根据当前工作内容和最近日志，先列出数据库事实，再单独给出下一步建议。' },
 ];
 
 function compactAiText(value, maxLength = 80) {
@@ -3369,6 +3453,11 @@ function serverMessageToAiMessage(message) {
   return createAiMessage(message.role, message.content || '', {
     id: 'db-' + message.id,
     sources: message.sources || [],
+    intent: message.intent || '',
+    grounded: message.grounded,
+    facts: message.facts || [],
+    suggestions: message.suggestions || [],
+    actionRequests: message.actionRequests || [],
     createdAt: message.createdAt,
   });
 }
@@ -3380,7 +3469,65 @@ function upsertAiConversation(list, conversation) {
   return [normalized, ...without].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
 }
 
-function AiChatThread({ messages, onOpenSource }) {
+function AiPendingActionCard({ action, onChanged }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const status = action.status || 'pending';
+
+  async function decide(decision) {
+    setBusy(true);
+    setError('');
+    try {
+      const updated = decision === 'approve'
+        ? await api.approveActionRequest(action.id)
+        : await api.rejectActionRequest(action.id, '在 AI 对话中拒绝');
+      onChanged?.(updated);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className={'ai-pending-action ' + status}>
+      <div className="ai-pending-action-head">
+        <span className="ai-pending-action-icon"><ShieldCheck size={17} /></span>
+        <div>
+          <small>{status === 'pending' ? '等待你的确认' : status === 'applied' ? '已执行' : status === 'rejected' ? '已拒绝' : '执行失败'}</small>
+          <strong>{action.title || actionTypeLabels[action.actionType] || '待审批操作'}</strong>
+        </div>
+      </div>
+      <ActionPayloadSummary action={action} />
+      {error && <p className="ai-pending-action-error" role="alert">{error}</p>}
+      {status === 'pending' && (
+        <div className="ai-pending-action-actions">
+          <button type="button" className="ghost-button" disabled={busy} onClick={() => decide('reject')}>
+            <X size={14} />
+            拒绝
+          </button>
+          <button type="button" className="icon-button primary" disabled={busy} onClick={() => decide('approve')}>
+            <Check size={14} />
+            {busy ? '处理中...' : '确认执行'}
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function AiPendingActions({ actions = [], onChanged }) {
+  if (!actions.length) return null;
+  return (
+    <section className="ai-pending-actions" aria-label="待审批操作">
+      {actions.map((action) => (
+        <AiPendingActionCard key={action.id} action={action} onChanged={onChanged} />
+      ))}
+    </section>
+  );
+}
+
+function AiChatThread({ messages, onOpenSource, onRetry, onActionChanged }) {
   if (!messages.length) {
     return (
       <div className="ai-empty-state">
@@ -3392,7 +3539,7 @@ function AiChatThread({ messages, onOpenSource }) {
 
   return (
     <div className="ai-chat-thread" aria-live="polite">
-      {messages.map((message) => (
+      {messages.map((message, index) => (
         <article className={'ai-chat-message ' + message.role} key={message.id}>
           <span className="ai-chat-role">{message.role === 'user' ? '我' : 'AI'}</span>
           <div className="ai-chat-bubble">
@@ -3410,7 +3557,29 @@ function AiChatThread({ messages, onOpenSource }) {
             )}
             {message.streaming && <span className="streaming-cursor" aria-hidden="true" />}
           </div>
+          {message.role === 'assistant' && message.intent && (
+            <span className="ai-answer-basis">
+              {message.grounded === false ? '资料不足' : '基于任务台数据库'}
+            </span>
+          )}
           <AiMessageTools message={message} />
+          {message.role === 'assistant' && (
+            <AiPendingActions
+              actions={message.actionRequests || []}
+              onChanged={(action) => onActionChanged?.(message.id, action)}
+            />
+          )}
+          {message.role === 'assistant' && message.error && (
+            <button
+              type="button"
+              className="ghost-button ai-retry-button"
+              onClick={() => onRetry?.([...messages.slice(0, index)].reverse().find((item) => item.role === 'user')?.content || '')}
+            >
+              <RotateCcw size={14} />
+              重新生成
+            </button>
+          )}
+          {message.role === 'assistant' && message.stopped && <span className="ai-stopped-label">{aiText.stopped}</span>}
           {message.role === 'assistant' && Boolean(message.sources?.length) && (
             <details className="ai-chat-sources">
               <summary>{aiText.sources}</summary>
@@ -3484,6 +3653,7 @@ function AiConversationShell({ scope = 'workspace', taskId = null, compact = fal
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [cacheReady, setCacheReady] = useState(false);
+  const streamControllerRef = useRef(null);
 
   const activeMessages = activeConversationId ? messagesByConversation[activeConversationId] || [] : [];
   const activeConversation = conversations.find((item) => item.id === activeConversationId);
@@ -3568,6 +3738,16 @@ function AiConversationShell({ scope = 'workspace', taskId = null, compact = fal
       const next = typeof updater === 'function' ? updater(previous) : updater;
       return { ...current, [key]: next };
     });
+  }
+
+  function updateMessageAction(messageId, updatedAction) {
+    if (!activeConversationId) return;
+    updateConversationMessages(activeConversationId, (current) => updateAiMessage(current, messageId, (message) => ({
+      ...message,
+      actionRequests: (message.actionRequests || []).map((action) => (
+        action.id === updatedAction.id ? updatedAction : action
+      )),
+    })));
   }
 
   function replaceConversationId(oldId, conversation) {
@@ -3671,6 +3851,8 @@ function AiConversationShell({ scope = 'workspace', taskId = null, compact = fal
     setQuestion('');
     setLoading(true);
     setError('');
+    const streamController = new AbortController();
+    streamControllerRef.current = streamController;
 
     let targetConversationId = conversationId;
     try {
@@ -3681,6 +3863,7 @@ function AiConversationShell({ scope = 'workspace', taskId = null, compact = fal
         localKey,
         messages: toAiHistory(previousMessages),
       }, {
+        signal: streamController.signal,
         onConversation: (conversation) => {
           if (!conversation) return;
           targetConversationId = replaceConversationId(targetConversationId, conversation);
@@ -3689,6 +3872,18 @@ function AiConversationShell({ scope = 'workspace', taskId = null, compact = fal
           updateConversationMessages(targetConversationId, (current) => updateAiMessage(current, assistantMessage.id, (message) => ({
             ...message,
             sources: nextSources || [],
+          })));
+        },
+        onIntent: (intent) => {
+          updateConversationMessages(targetConversationId, (current) => updateAiMessage(current, assistantMessage.id, (message) => ({
+            ...message,
+            intent,
+          })));
+        },
+        onActionRequests: (actionRequests) => {
+          updateConversationMessages(targetConversationId, (current) => updateAiMessage(current, assistantMessage.id, (message) => ({
+            ...message,
+            actionRequests: actionRequests || [],
           })));
         },
         onDelta: (delta) => {
@@ -3704,19 +3899,32 @@ function AiConversationShell({ scope = 'workspace', taskId = null, compact = fal
           updateConversationMessages(targetConversationId, (current) => updateAiMessage(current, assistantMessage.id, (message) => ({
             ...message,
             streaming: false,
+            intent: payload?.intent || message.intent,
+            grounded: payload?.grounded,
+            facts: payload?.facts || [],
+            suggestions: payload?.suggestions || [],
+            actionRequests: payload?.actionRequests?.length ? payload.actionRequests : message.actionRequests,
           })));
         },
       });
     } catch (err) {
-      setError(err.message);
+      const stopped = err.name === 'AbortError';
+      if (!stopped) setError(err.message);
       updateConversationMessages(targetConversationId, (current) => updateAiMessage(current, assistantMessage.id, (message) => ({
         ...message,
-        content: message.content || aiText.failed,
+        content: stopped ? message.content : (message.content || aiText.failed),
         streaming: false,
+        error: !stopped,
+        stopped,
       })));
     } finally {
+      if (streamControllerRef.current === streamController) streamControllerRef.current = null;
       setLoading(false);
     }
+  }
+
+  function stopGenerating() {
+    streamControllerRef.current?.abort();
   }
 
   async function submit(event) {
@@ -3752,12 +3960,16 @@ function AiConversationShell({ scope = 'workspace', taskId = null, compact = fal
             {aiText.newChat}
           </button>
         </header>
-        <AiChatThread messages={activeMessages} onOpenSource={onOpenSource} />
+        <AiChatThread
+          messages={activeMessages}
+          onOpenSource={onOpenSource}
+          onRetry={sendQuestion}
+          onActionChanged={updateMessageAction}
+        />
         {loadingMessages && <p className="ai-loading-line">{aiText.loadingHistory}</p>}
         {error && <div className="form-error">{error}</div>}
-        {compact && (
-          <div className="ai-quick-actions" aria-label="任务 AI 快捷动作">
-            {taskAiQuickPrompts.map((item) => (
+        <div className="ai-quick-actions" aria-label={compact ? '任务 AI 快捷动作' : '工作区 AI 快捷动作'}>
+            {(compact ? taskAiQuickPrompts : workspaceAiQuickPrompts).map((item) => (
               <button
                 type="button"
                 key={item.id}
@@ -3769,19 +3981,29 @@ function AiConversationShell({ scope = 'workspace', taskId = null, compact = fal
                 {item.label}
               </button>
             ))}
-          </div>
-        )}
+        </div>
         <form className="ai-composer" onSubmit={submit}>
           <textarea
             name={compact ? 'taskAiQuestion' : 'aiWorkspaceQuestion'}
             value={question}
             onChange={(event) => setQuestion(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                sendQuestion(question);
+              }
+            }}
             placeholder={compact ? aiText.askTask : aiText.askWorkspace}
             rows="1"
           />
-          <button type="submit" className="icon-button primary" disabled={loading || !question.trim()}>
-            <Search size={16} />
-            {loading ? aiText.generating : aiText.send}
+          <button
+            type={loading ? 'button' : 'submit'}
+            className={loading ? 'icon-button ai-stop-button' : 'icon-button primary'}
+            disabled={!loading && !question.trim()}
+            onClick={loading ? stopGenerating : undefined}
+          >
+            {loading ? <Square size={15} /> : <Search size={16} />}
+            {loading ? '停止' : aiText.send}
           </button>
         </form>
       </section>
@@ -7218,6 +7440,9 @@ function SettingsView({ addToast, askConfirm }) {
   const [updateStatus, setUpdateStatus] = useState(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [updateStreamState, setUpdateStreamState] = useState('idle');
+  const [weixinStatus, setWeixinStatus] = useState(null);
+  const [weixinStreamState, setWeixinStreamState] = useState('idle');
+  const [weixinVerifyCode, setWeixinVerifyCode] = useState('');
   const [settingsModal, setSettingsModal] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -7227,6 +7452,7 @@ function SettingsView({ addToast, askConfirm }) {
   function applySettings(data) {
     setSettings(data);
     setUpdateStatus(data.update || null);
+    setWeixinStatus(data.weixin || null);
     setUpdateBranch(data.update?.branch || 'main');
     setAiForm({
       indexingEnabled: Boolean(data.ai?.indexingEnabled),
@@ -7344,6 +7570,61 @@ function SettingsView({ addToast, askConfirm }) {
     if (!node) return;
     node.scrollTop = node.scrollHeight;
   }, [settingsModal, updateStatus?.logs?.length]);
+
+  useEffect(() => {
+    if (settingsModal !== 'weixin') {
+      setWeixinStreamState('idle');
+      return undefined;
+    }
+
+    let closed = false;
+    let pollTimer = null;
+    const refresh = async () => {
+      try {
+        setWeixinStatus(await api.getWeixinStatus());
+      } catch {
+        // EventSource reconnects automatically; polling is only a fallback.
+      }
+    };
+
+    if (!window.EventSource) {
+      setWeixinStreamState('polling');
+      pollTimer = window.setInterval(refresh, 2000);
+      refresh();
+      return () => window.clearInterval(pollTimer);
+    }
+
+    const source = new EventSource('/api/settings/weixin/events');
+    setWeixinStreamState('connecting');
+    const applyWeixinEvent = (event) => {
+      if (closed) return;
+      try {
+        const payload = JSON.parse(event.data || '{}');
+        if (payload.state) setWeixinStatus(payload.state);
+        setWeixinStreamState('connected');
+        if (pollTimer) {
+          window.clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      } catch {
+        setWeixinStreamState('connected');
+      }
+    };
+    source.addEventListener('weixin.state', applyWeixinEvent);
+    source.addEventListener('weixin.log', applyWeixinEvent);
+    source.onerror = () => {
+      if (closed) return;
+      setWeixinStreamState('reconnecting');
+      if (!pollTimer) pollTimer = window.setInterval(refresh, 2000);
+    };
+
+    return () => {
+      closed = true;
+      source.close();
+      if (pollTimer) window.clearInterval(pollTimer);
+      setWeixinStreamState('idle');
+    };
+  }, [settingsModal]);
 
   function updateAiField(field, value) {
     setAiForm((current) => ({ ...current, [field]: value }));
@@ -7518,6 +7799,29 @@ function SettingsView({ addToast, askConfirm }) {
           ? '实时连接不可用，已使用轮询'
           : '未连接';
   const aiConfigured = Boolean(settings?.ai?.litellm?.apiKey?.configured);
+  const weixinConnected = Boolean(weixinStatus?.connected && weixinStatus?.status === 'connected');
+  const weixinConnecting = ['connecting', 'reconnecting', 'waiting_scan', 'scanned', 'verifying', 'verify_required']
+    .includes(weixinStatus?.status);
+  const weixinTone = weixinConnected
+    ? 'ok'
+    : weixinStatus?.status === 'error'
+      ? 'error'
+      : weixinConnecting
+        ? 'running'
+        : 'idle';
+  const weixinLabel = weixinConnected
+    ? '已连接'
+    : weixinStatus?.status === 'waiting_scan'
+      ? '等待扫码'
+      : weixinStatus?.status === 'scanned'
+        ? '已扫码'
+        : weixinStatus?.status === 'verify_required'
+          ? '需要验证码'
+          : weixinStatus?.status === 'reconnecting'
+            ? '正在重连'
+            : weixinStatus?.status === 'error'
+              ? '连接异常'
+              : '未连接';
   const closeSettingsModal = () => setSettingsModal('');
 
   function formatUpdateTime(value) {
@@ -7526,6 +7830,58 @@ function SettingsView({ addToast, askConfirm }) {
       return new Date(value).toLocaleString('zh-CN', { hour12: false });
     } catch {
       return value;
+    }
+  }
+
+  async function startWeixinConnection() {
+    setBusy('weixin-login');
+    setError('');
+    try {
+      const status = await api.startWeixinLogin();
+      setWeixinStatus(status);
+      setWeixinVerifyCode('');
+      addToast?.('info', '二维码已生成', '请用手机微信扫码并确认连接。');
+    } catch (err) {
+      setError(err.message);
+      addToast?.('error', '生成二维码失败', err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function verifyWeixinConnection(event) {
+    event.preventDefault();
+    setBusy('weixin-verify');
+    setError('');
+    try {
+      setWeixinStatus(await api.submitWeixinVerifyCode(weixinVerifyCode));
+      setWeixinVerifyCode('');
+    } catch (err) {
+      setError(err.message);
+      addToast?.('error', '验证码提交失败', err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function disconnectWeixinConnection() {
+    const confirmed = askConfirm
+      ? await askConfirm(
+          '断开微信连接',
+          '断开后服务器会删除微信登录凭证，并清理尚未保存的微信临时图片和文件。',
+          { confirmText: '确认断开', tone: 'danger' },
+        )
+      : window.confirm('确认断开微信连接吗？');
+    if (!confirmed) return;
+    setBusy('weixin-disconnect');
+    try {
+      setWeixinStatus(await api.disconnectWeixin());
+      addToast?.('success', '微信已断开', '服务器凭证和临时附件已清理。');
+    } catch (err) {
+      setError(err.message);
+      addToast?.('error', '断开失败', err.message);
+    } finally {
+      setBusy('');
     }
   }
 
@@ -7822,13 +8178,115 @@ function SettingsView({ addToast, askConfirm }) {
     );
   }
 
+  function renderWeixinPanel() {
+    const streamLabel = weixinStreamState === 'connected'
+      ? '实时状态正常'
+      : weixinStreamState === 'reconnecting'
+        ? '正在重新连接状态通道'
+        : weixinStreamState === 'polling'
+          ? '已使用轮询刷新'
+          : '正在连接状态通道';
+    return (
+      <div className="weixin-settings-panel">
+        <section className={`weixin-connection-banner ${weixinTone}`}>
+          <div className="weixin-status-icon"><MessageCircle size={22} /></div>
+          <div>
+            <span>个人微信私聊</span>
+            <strong>{weixinLabel}</strong>
+            <p>{weixinConnected ? '微信消息会使用当前任务台数据库和 AI 配置回答。' : '使用微信 ClawBot 扫码授权，不需要安装 OpenClaw。'}</p>
+          </div>
+          <span className={`settings-status-pill ${weixinTone}`}>{weixinLabel}</span>
+        </section>
+
+        {weixinStatus?.qrDataUrl && (
+          <section className="weixin-qr-section" aria-live="polite">
+            <div className="weixin-qr-frame">
+              <img src={weixinStatus.qrDataUrl} alt="微信扫码连接二维码" />
+            </div>
+            <div className="weixin-qr-copy">
+              <span>微信扫码连接</span>
+              <h3>{weixinStatus?.status === 'scanned' ? '已扫码，请在手机上确认' : '打开微信扫一扫'}</h3>
+              <p>请使用能看到 ClawBot 插件的微信扫码。二维码和登录 token 都由服务器处理。</p>
+              {weixinStatus?.qrExpiresAt && <small>二维码有效至 {formatUpdateTime(weixinStatus.qrExpiresAt)}</small>}
+            </div>
+          </section>
+        )}
+
+        {weixinStatus?.needsVerifyCode && (
+          <form className="weixin-verify-form" onSubmit={verifyWeixinConnection}>
+            <label>
+              <span>手机验证码</span>
+              <input
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={weixinVerifyCode}
+                onChange={(event) => setWeixinVerifyCode(event.target.value.replace(/\D/g, '').slice(0, 8))}
+                placeholder="输入手机微信显示的数字"
+                autoComplete="one-time-code"
+              />
+            </label>
+            <button type="submit" className="icon-button primary" disabled={!weixinVerifyCode || Boolean(busy)}>
+              <ShieldCheck size={15} />
+              {busy === 'weixin-verify' ? '验证中...' : '提交验证码'}
+            </button>
+          </form>
+        )}
+
+        <dl className="weixin-status-grid">
+          <div><dt>账号</dt><dd>{weixinStatus?.accountId ? `${weixinStatus.accountId.slice(0, 8)}...` : '未连接'}</dd></div>
+          <div><dt>接收方式</dt><dd>仅扫码账号私聊</dd></div>
+          <div><dt>最近接收</dt><dd>{formatUpdateTime(weixinStatus?.lastInboundAt)}</dd></div>
+          <div><dt>最近回复</dt><dd>{formatUpdateTime(weixinStatus?.lastOutboundAt)}</dd></div>
+          <div><dt>临时文件</dt><dd>{weixinStatus?.temporaryMediaTtlHours || 24} 小时清理</dd></div>
+          <div><dt>状态通道</dt><dd>{streamLabel}</dd></div>
+        </dl>
+
+        <div className="settings-inline-actions">
+          <button type="button" className="icon-button primary" onClick={startWeixinConnection} disabled={Boolean(busy)}>
+            <QrCode size={16} />
+            {busy === 'weixin-login' ? '生成中...' : weixinConnected ? '重新登录' : '扫码连接'}
+          </button>
+          <button type="button" className="ghost-button danger" onClick={disconnectWeixinConnection} disabled={Boolean(busy) || (!weixinStatus?.connected && !weixinStatus?.accountId)}>
+            <Unplug size={16} />
+            {busy === 'weixin-disconnect' ? '断开中...' : '断开连接'}
+          </button>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={async () => {
+              try {
+                setWeixinStatus(await api.getWeixinStatus());
+              } catch (err) {
+                setError(err.message);
+              }
+            }}
+            disabled={Boolean(busy)}
+          >
+            <RefreshCw size={15} />
+            刷新状态
+          </button>
+        </div>
+        {weixinStatus?.error && <p className="settings-error-text">{weixinStatus.error}</p>}
+        <div className="weixin-policy-note">
+          <Info size={16} />
+          <p>图片和文件默认只用于当前问答。明确发送“保存到任务 #编号”“保存到笔记 #编号”或“保存为笔记”后，系统才会生成待审批操作。</p>
+        </div>
+        <div className="settings-update-log weixin-log" aria-label="微信连接日志">
+          {(weixinStatus?.logs || []).length
+            ? weixinStatus.logs.map((line, index) => <code key={`${line}-${index}`}>{line}</code>)
+            : <span>暂无连接日志。</span>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <section className="settings-page">
       <div className="settings-hero">
         <div>
           <span>配置中心</span>
           <h2>设置</h2>
-          <p>管理 AI 网关、访问密码、GitHub 在线更新和本地备份。敏感配置只保存在服务器 .env，不会下发到前端。</p>
+          <p>管理 AI 网关、微信连接、访问密码、在线更新和本地备份。敏感配置只保存在服务器，不会下发到前端。</p>
         </div>
         <button type="button" className="ghost-button" onClick={loadSettings} disabled={loading || Boolean(busy)}>
           <RefreshCw size={15} />
@@ -7855,6 +8313,21 @@ function SettingsView({ addToast, askConfirm }) {
                 <div><dt>聊天模型</dt><dd>{settings?.ai?.litellm?.chatModel || '未设置'}</dd></div>
                 <div><dt>向量索引</dt><dd>{settings?.ai?.indexingEnabled ? '已启用' : '未启用'}</dd></div>
                 <div><dt>OCR 模型</dt><dd>{settings?.ai?.ocr?.effectiveModel || settings?.ai?.ocr?.model || '未设置'}</dd></div>
+              </dl>
+            </SettingsEntryCard>
+            <SettingsEntryCard
+              icon={MessageCircle}
+              eyebrow="消息通道"
+              title="微信对话"
+              status={weixinLabel}
+              statusClassName={weixinTone}
+              actionLabel={weixinConnected ? '管理微信连接' : '扫码连接微信'}
+              onOpen={() => setSettingsModal('weixin')}
+            >
+              <dl className="settings-summary-list">
+                <div><dt>登录方式</dt><dd>ClawBot 扫码</dd></div>
+                <div><dt>消息范围</dt><dd>个人私聊</dd></div>
+                <div><dt>临时文件</dt><dd>{weixinStatus?.temporaryMediaTtlHours || 24} 小时</dd></div>
               </dl>
             </SettingsEntryCard>
             <SettingsEntryCard
@@ -7900,6 +8373,16 @@ function SettingsView({ addToast, askConfirm }) {
           {settingsModal === 'ai' && (
             <SettingsModal title="大模型与检索配置" description="调整 AI 网关、向量索引、OCR 和检索服务配置。" onClose={closeSettingsModal} wide>
               {renderAiConfigForm()}
+            </SettingsModal>
+          )}
+          {settingsModal === 'weixin' && (
+            <SettingsModal
+              title="微信对话连接"
+              description="使用微信 ClawBot 扫码连接当前任务台，不需要安装 OpenClaw。"
+              onClose={closeSettingsModal}
+              wide
+            >
+              {renderWeixinPanel()}
             </SettingsModal>
           )}
           {settingsModal === 'password' && (

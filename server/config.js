@@ -107,4 +107,10 @@ export const config = {
     enabled: mcpEnabled,
     token: process.env.MCP_TOKEN || '',
   },
+  weixin: {
+    apiBaseUrl: process.env.WEIXIN_API_BASE_URL || 'https://ilinkai.weixin.qq.com',
+    cdnBaseUrl: process.env.WEIXIN_CDN_BASE_URL || 'https://novac2c.cdn.weixin.qq.com/c2c',
+    tempTtlHours: positiveNumber(process.env.WEIXIN_TEMP_TTL_HOURS, 24, 1),
+    maxMediaBytes: positiveNumber(process.env.WEIXIN_MAX_MEDIA_BYTES, 50 * 1024 * 1024, 1024),
+  },
 };
