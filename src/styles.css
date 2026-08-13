@@ -5087,6 +5087,12 @@ textarea {
   }
 }
 
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .note-item.is-dragging {
   cursor: grabbing;
   opacity: 0.15;
@@ -5952,6 +5958,172 @@ textarea {
 .settings-error-text {
   color: var(--danger);
   font-weight: 800;
+}
+
+.update-workflow {
+  gap: 14px;
+}
+
+.update-check-panel,
+.update-progress-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  padding: 14px;
+}
+
+.update-check-panel.ok {
+  border-color: color-mix(in srgb, var(--done-color) 24%, var(--border-color));
+  background: color-mix(in srgb, var(--done-bg) 38%, var(--bg-panel));
+}
+
+.update-check-panel.warning {
+  border-color: color-mix(in srgb, var(--medium) 34%, var(--border-color));
+  background: color-mix(in srgb, var(--medium-light) 42%, var(--bg-panel));
+}
+
+.update-check-panel.error {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--border-color));
+  background: color-mix(in srgb, var(--danger-light) 42%, var(--bg-panel));
+}
+
+.update-check-head,
+.update-progress-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.update-check-head > div,
+.update-progress-head > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.update-check-head span,
+.update-progress-head span {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.update-check-head strong,
+.update-progress-head strong {
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.update-check-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.update-check-grid div {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-input) 66%, transparent);
+  padding: 9px 10px;
+}
+
+.update-check-grid dt,
+.update-check-grid dd {
+  min-width: 0;
+  margin: 0;
+}
+
+.update-check-grid dt {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.update-check-grid dd {
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-progress-head > strong {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.update-progress-track {
+  height: 9px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border-color);
+}
+
+.update-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--primary), var(--accent));
+  transition: width 0.28s ease;
+}
+
+.update-step-list {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.update-step {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.update-step span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.update-step.done {
+  border-color: color-mix(in srgb, var(--done-color) 28%, var(--border-color));
+  background: color-mix(in srgb, var(--done-bg) 42%, var(--bg-panel));
+  color: var(--done-color);
+}
+
+.update-step.active {
+  border-color: color-mix(in srgb, var(--primary) 36%, var(--border-color));
+  background: var(--primary-light);
+  color: var(--primary);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.update-step.active svg {
+  animation: spin 0.9s linear infinite;
+}
+
+.update-step.failed {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border-color));
+  background: color-mix(in srgb, var(--danger-light) 58%, var(--bg-panel));
+  color: var(--danger);
 }
 
 .settings-update-log {
@@ -8015,6 +8187,11 @@ textarea {
     grid-row: auto;
   }
 
+  .update-check-grid,
+  .update-step-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .settings-modal,
   .settings-modal.wide {
     width: calc(100vw - 24px);
@@ -8107,6 +8284,16 @@ textarea {
 
   .settings-overview-grid,
   .settings-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .update-check-head,
+  .update-progress-head {
+    flex-direction: column;
+  }
+
+  .update-check-grid,
+  .update-step-list {
     grid-template-columns: 1fr;
   }
 

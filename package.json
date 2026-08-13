@@ -21,6 +21,7 @@
     "smoke:llamaindex": "node server/scripts/llama-index-smoke-test.js",
     "smoke:mcp": "node server/scripts/mcp-read-smoke-test.js",
     "smoke:mcp-actions": "node server/scripts/mcp-action-smoke-test.js",
+    "smoke:update-check": "node server/scripts/update-check-smoke-test.js",
     "ocr:backfill": "node server/scripts/ocr-backfill.js"
   },
   "keywords": [],

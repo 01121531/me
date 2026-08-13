@@ -7216,10 +7216,13 @@ function SettingsView({ addToast, askConfirm }) {
   });
   const [updateBranch, setUpdateBranch] = useState('main');
   const [updateStatus, setUpdateStatus] = useState(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateStreamState, setUpdateStreamState] = useState('idle');
   const [settingsModal, setSettingsModal] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const updateLogRef = useRef(null);
 
   function applySettings(data) {
     setSettings(data);
@@ -7268,10 +7271,79 @@ function SettingsView({ addToast, askConfirm }) {
   }, []);
 
   useEffect(() => {
-    if (!updateStatus?.running) return undefined;
+    if (!updateStatus?.running || settingsModal === 'update') return undefined;
     const timer = window.setInterval(refreshUpdateStatus, 1800);
     return () => window.clearInterval(timer);
-  }, [updateStatus?.running]);
+  }, [updateStatus?.running, settingsModal]);
+
+  useEffect(() => {
+    if (settingsModal !== 'update') return undefined;
+    checkForUpdates({ silent: true });
+    return undefined;
+  }, [settingsModal]);
+
+  useEffect(() => {
+    if (settingsModal !== 'update') {
+      setUpdateStreamState('idle');
+      return undefined;
+    }
+    if (!window.EventSource) {
+      setUpdateStreamState('polling');
+      const timer = window.setInterval(refreshUpdateStatus, 2000);
+      refreshUpdateStatus();
+      return () => window.clearInterval(timer);
+    }
+
+    let closed = false;
+    let pollTimer = null;
+    const source = new EventSource('/api/settings/update/events');
+    setUpdateStreamState('connecting');
+
+    function applyUpdateEvent(event) {
+      if (closed) return;
+      try {
+        const payload = JSON.parse(event.data || '{}');
+        if (payload.state) setUpdateStatus(payload.state);
+        setUpdateStreamState('connected');
+        if (pollTimer) {
+          window.clearInterval(pollTimer);
+          pollTimer = null;
+        }
+      } catch {
+        setUpdateStreamState('connected');
+      }
+    }
+
+    function startFallbackPolling() {
+      if (pollTimer) return;
+      pollTimer = window.setInterval(refreshUpdateStatus, 2000);
+      refreshUpdateStatus();
+    }
+
+    source.addEventListener('update.state', applyUpdateEvent);
+    source.addEventListener('update.log', applyUpdateEvent);
+    source.addEventListener('update.done', applyUpdateEvent);
+    source.addEventListener('update.error', applyUpdateEvent);
+    source.onerror = () => {
+      if (closed) return;
+      setUpdateStreamState('reconnecting');
+      startFallbackPolling();
+    };
+
+    return () => {
+      closed = true;
+      source.close();
+      if (pollTimer) window.clearInterval(pollTimer);
+      setUpdateStreamState('idle');
+    };
+  }, [settingsModal]);
+
+  useEffect(() => {
+    if (settingsModal !== 'update') return;
+    const node = updateLogRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [settingsModal, updateStatus?.logs?.length]);
 
   function updateAiField(field, value) {
     setAiForm((current) => ({ ...current, [field]: value }));
@@ -7345,11 +7417,46 @@ function SettingsView({ addToast, askConfirm }) {
     }
   }
 
+  async function checkForUpdates({ silent = false } = {}) {
+    setCheckingUpdate(true);
+    setError('');
+    try {
+      const result = await api.checkOnlineUpdate({ branch: updateBranch || 'main' });
+      setUpdateStatus(result.update || ((current) => ({ ...(current || {}), check: result.check })));
+      if (!silent) {
+        if (result.check?.status === 'ok' && result.check.hasUpdate) {
+          addToast?.('success', '发现新版本', `远端 ${result.check.remoteShort}，本地 ${result.check.localShort}。`);
+        } else if (result.check?.status === 'ok') {
+          addToast?.('success', '已是最新', '当前服务器代码和 GitHub main 分支一致。');
+        } else {
+          addToast?.('error', '检查更新失败', result.check?.error || '请稍后重试。');
+        }
+      }
+    } catch (err) {
+      setError(err.message);
+      if (!silent) addToast?.('error', '检查更新失败', err.message);
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
+  async function copyUpdateLogs() {
+    const logs = (updateStatus?.logs || []).join('\n');
+    if (!logs) return;
+    try {
+      await copyTextToClipboard(logs);
+      addToast?.('success', '已复制日志', '在线更新日志已复制到剪贴板。');
+    } catch (err) {
+      addToast?.('error', '复制失败', err.message || '浏览器不允许复制。');
+    }
+  }
+
   async function startUpdate() {
+    const branch = updateBranch || 'main';
     const confirmed = askConfirm
       ? await askConfirm(
           '确认在线更新',
-          '系统会从 GitHub 拉取 main 分支、安装依赖并重新构建。不会删除数据库、附件或服务器 .env 配置；完成后会尝试重启 PM2 服务。',
+          `系统会从 GitHub 拉取 ${branch} 分支、安装依赖并重新构建。不会删除数据库、附件或服务器 .env 配置；完成后会尝试重启 PM2 服务。`,
           { confirmText: '确认更新', tone: 'primary' },
         )
       : window.confirm('确认从 GitHub 在线更新吗？');
@@ -7358,7 +7465,7 @@ function SettingsView({ addToast, askConfirm }) {
     setBusy('online-update');
     setError('');
     try {
-      const status = await api.startOnlineUpdate({ branch: updateBranch || 'main' });
+      const status = await api.startOnlineUpdate({ branch });
       setUpdateStatus(status);
       addToast?.('info', '在线更新已开始', '可以在下方查看更新日志。');
     } catch (err) {
@@ -7375,16 +7482,59 @@ function SettingsView({ addToast, askConfirm }) {
       ? 'error'
       : updateStatus?.running
         ? 'running'
-        : 'idle';
+        : updateStatus?.check?.status === 'failed'
+          ? 'error'
+          : updateStatus?.check?.status === 'ok' && updateStatus.check.hasUpdate
+            ? 'warning'
+            : updateStatus?.check?.status === 'ok'
+              ? 'ok'
+              : 'idle';
   const updateStatusLabel = updateStatus?.running
     ? '更新中'
     : updateStatus?.status === 'completed'
       ? '已完成'
       : updateStatus?.status === 'failed'
         ? '失败'
-        : '待命';
+        : updateStatus?.check?.status === 'ok' && updateStatus.check.hasUpdate
+          ? '有新版本'
+          : updateStatus?.check?.status === 'ok'
+            ? '已是最新'
+            : updateStatus?.check?.status === 'failed'
+              ? '检查失败'
+              : '待命';
+  const updateCheck = updateStatus?.check || null;
+  const updateHasNewVersion = updateCheck?.status === 'ok' && updateCheck.hasUpdate;
+  const updateCheckedLatest = updateCheck?.status === 'ok' && updateCheck.hasUpdate === false;
+  const updateCanStart = updateHasNewVersion && !updateStatus?.running && !checkingUpdate && !Boolean(busy);
+  const updateProgress = Math.max(0, Math.min(100, Number(updateStatus?.progress || 0)));
+  const updateSteps = Array.isArray(updateStatus?.steps) ? updateStatus.steps : [];
+  const updateStreamLabel = updateStreamState === 'connected'
+    ? '实时连接正常'
+    : updateStreamState === 'connecting'
+      ? '正在连接实时进度'
+      : updateStreamState === 'reconnecting'
+        ? '服务可能正在重启，正在重新连接'
+        : updateStreamState === 'polling'
+          ? '实时连接不可用，已使用轮询'
+          : '未连接';
   const aiConfigured = Boolean(settings?.ai?.litellm?.apiKey?.configured);
   const closeSettingsModal = () => setSettingsModal('');
+
+  function formatUpdateTime(value) {
+    if (!value) return '未记录';
+    try {
+      return new Date(value).toLocaleString('zh-CN', { hour12: false });
+    } catch {
+      return value;
+    }
+  }
+
+  function updateStepState(step) {
+    if (updateStatus?.status === 'failed' && updateStatus.phase === step.phase) return 'failed';
+    if (updateStatus?.phase === step.phase && updateStatus?.running) return 'active';
+    if (updateStatus?.status === 'completed' || updateProgress > step.progress) return 'done';
+    return 'pending';
+  }
 
   function renderAiConfigForm() {
     return (
@@ -7565,28 +7715,105 @@ function SettingsView({ addToast, askConfirm }) {
   }
 
   function renderUpdatePanel() {
+    const checkTone = updateCheck?.status === 'failed'
+      ? 'error'
+      : updateHasNewVersion
+        ? 'warning'
+        : updateCheckedLatest
+          ? 'ok'
+          : 'idle';
+    const checkLabel = updateCheck?.status === 'failed'
+      ? '检查失败'
+      : updateHasNewVersion
+        ? '发现新版本'
+        : updateCheckedLatest
+          ? '已是最新'
+          : '未检查';
+    const startButtonText = updateStatus?.running
+      ? '更新中...'
+      : updateCheckedLatest
+        ? '已是最新'
+        : updateCheck?.status === 'ok'
+          ? '从 GitHub 更新'
+          : '请先检查更新';
+
     return (
-      <div className="settings-stack-form">
+      <div className="settings-stack-form update-workflow">
         <label>
           <span>更新分支</span>
           <input
             value={updateBranch}
             onChange={(event) => setUpdateBranch(event.target.value)}
             placeholder="main"
+            disabled={updateStatus?.running}
           />
         </label>
+        <section className={`update-check-panel ${checkTone}`} aria-live="polite">
+          <div className="update-check-head">
+            <div>
+              <span>检查结果</span>
+              <strong>{checkLabel}</strong>
+            </div>
+            <span className={`settings-status-pill ${checkTone}`}>{checkLabel}</span>
+          </div>
+          <dl className="update-check-grid">
+            <div><dt>本地版本</dt><dd>{updateCheck?.localShort || '未检查'}</dd></div>
+            <div><dt>远端版本</dt><dd>{updateCheck?.remoteShort || '未检查'}</dd></div>
+            <div><dt>当前分支</dt><dd>{updateCheck?.currentBranch || updateBranch || 'main'}</dd></div>
+            <div><dt>检查时间</dt><dd>{formatUpdateTime(updateCheck?.checkedAt)}</dd></div>
+            <div><dt>工作区</dt><dd>{updateCheck?.dirty ? '有未提交改动' : updateCheck?.status === 'ok' ? '干净' : '未检查'}</dd></div>
+            <div><dt>实时状态</dt><dd>{updateStreamLabel}</dd></div>
+          </dl>
+          {updateCheck?.error && <p className="settings-error-text">{updateCheck.error}</p>}
+          {updateCheck?.dirty && (
+            <p className="settings-help-text">检测到服务器工作区有未提交改动，更新可能被 Git 阻止。</p>
+          )}
+        </section>
+        <section className="update-progress-panel" aria-live="polite">
+          <div className="update-progress-head">
+            <div>
+              <span>{updateStatus?.currentStep || '待命'}</span>
+              <strong>{updateStatus?.running ? '正在更新' : updateStatusLabel}</strong>
+            </div>
+            <strong>{updateProgress}%</strong>
+          </div>
+          <div className="update-progress-track" aria-label={`更新进度 ${updateProgress}%`}>
+            <span style={{ width: `${updateProgress}%` }} />
+          </div>
+          <div className="update-step-list">
+            {updateSteps.map((step) => {
+              const state = updateStepState(step);
+              return (
+                <div key={step.phase} className={`update-step ${state}`}>
+                  {state === 'done' ? <CheckCircle2 size={14} /> : state === 'failed' ? <AlertTriangle size={14} /> : state === 'active' ? <RefreshCw size={14} /> : <Clock3 size={14} />}
+                  <span>{step.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
         <div className="settings-inline-actions">
-          <button type="button" className="ghost-button" onClick={refreshUpdateStatus} disabled={Boolean(busy)}>
+          <button type="button" className="ghost-button" onClick={() => checkForUpdates()} disabled={Boolean(busy) || checkingUpdate || updateStatus?.running}>
             <RefreshCw size={15} />
-            查看状态
+            {checkingUpdate ? '检查中...' : '检查更新'}
           </button>
-          <button type="button" className="icon-button primary" onClick={startUpdate} disabled={Boolean(busy) || updateStatus?.running}>
+          <button type="button" className="icon-button primary" onClick={startUpdate} disabled={!updateCanStart}>
             <Download size={15} />
-            {updateStatus?.running ? '更新中...' : '从 GitHub 更新'}
+            {startButtonText}
+          </button>
+          <button type="button" className="ghost-button" onClick={refreshUpdateStatus} disabled={Boolean(busy)}>
+            <Clock3 size={15} />
+            刷新状态
+          </button>
+          <button type="button" className="ghost-button" onClick={copyUpdateLogs} disabled={!(updateStatus?.logs || []).length}>
+            <Copy size={15} />
+            复制日志
           </button>
         </div>
+        {!updateCheck && <p className="settings-help-text">打开弹窗会自动检查一次；也可以手动点击“检查更新”。</p>}
+        {updateCheckedLatest && <p className="settings-help-text">当前服务器已经是 GitHub 上该分支的最新版本。</p>}
         {updateStatus?.error && <p className="settings-error-text">{updateStatus.error}</p>}
-        <div className="settings-update-log" aria-label="在线更新日志">
+        <div className="settings-update-log" aria-label="在线更新日志" ref={updateLogRef}>
           {(updateStatus?.logs || []).length
             ? updateStatus.logs.map((line, index) => <code key={`${line}-${index}`}>{line}</code>)
             : <span>暂无更新日志。</span>}
@@ -7652,7 +7879,9 @@ function SettingsView({ addToast, askConfirm }) {
             >
               <dl className="settings-summary-list">
                 <div><dt>分支</dt><dd>{updateBranch || 'main'}</dd></div>
-                <div><dt>日志</dt><dd>{updateStatus?.logs?.length || 0} 条</dd></div>
+                <div><dt>版本</dt><dd>{updateHasNewVersion ? '有新版本' : updateCheckedLatest ? '已是最新' : '未检查'}</dd></div>
+                <div><dt>本地</dt><dd>{updateCheck?.localShort || '未检查'}</dd></div>
+                <div><dt>远端</dt><dd>{updateCheck?.remoteShort || '未检查'}</dd></div>
               </dl>
             </SettingsEntryCard>
             <SettingsEntryCard

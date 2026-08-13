@@ -121,6 +121,11 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   getOnlineUpdateStatus: () => request('/settings/update'),
+  checkOnlineUpdate: (payload = {}) =>
+    request('/settings/update/check', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
   startOnlineUpdate: (payload = {}) =>
     request('/settings/update', {
       method: 'POST',

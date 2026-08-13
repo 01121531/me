@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { promises as fsp } from 'fs';
+import fs, { promises as fsp } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
@@ -9,32 +9,130 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const envPath = path.join(projectRoot, '.env');
+const deployDir = path.join(projectRoot, '.deploy');
+const updateStatePath = path.join(deployDir, 'update-state.json');
 
 const updateLogLimit = 240;
-let updateState = {
+const updateSteps = [
+  { phase: 'checking', label: '检查版本', progress: 8 },
+  { phase: 'fetching', label: '拉取代码', progress: 22 },
+  { phase: 'checkout', label: '切换分支', progress: 36 },
+  { phase: 'pulling', label: '快进更新', progress: 50 },
+  { phase: 'installing', label: '安装依赖', progress: 68 },
+  { phase: 'building', label: '构建前端', progress: 84 },
+  { phase: 'restarting', label: '重启服务', progress: 94 },
+  { phase: 'completed', label: '完成', progress: 100 },
+];
+const updateStepMap = new Map(updateSteps.map((step) => [step.phase, step]));
+const updateClients = new Set();
+
+const defaultUpdateState = {
   status: 'idle',
   running: false,
   startedAt: null,
   finishedAt: null,
   branch: 'main',
+  phase: 'idle',
+  currentStep: '待命',
+  progress: 0,
   exitCode: null,
   error: '',
   logs: [],
+  check: null,
 };
+
+let updateState = loadPersistedUpdateState();
 
 function nowIso() {
   return new Date().toISOString();
 }
 
+function loadPersistedUpdateState() {
+  try {
+    if (!fs.existsSync(updateStatePath)) return { ...defaultUpdateState };
+    const parsed = JSON.parse(fs.readFileSync(updateStatePath, 'utf8'));
+    const state = normalizeUpdateState({ ...defaultUpdateState, ...parsed });
+    if (state.running) {
+      return {
+        ...state,
+        status: 'failed',
+        running: false,
+        phase: 'failed',
+        currentStep: '服务重启，无法确认上一次更新是否完成',
+        progress: Math.max(0, Math.min(99, Number(state.progress) || 0)),
+        finishedAt: state.finishedAt || nowIso(),
+        error: state.error || '服务在更新过程中重启，请检查当前代码版本和 PM2 日志。',
+      };
+    }
+    return state;
+  } catch {
+    return { ...defaultUpdateState };
+  }
+}
+
+function normalizeUpdateState(state) {
+  return {
+    ...defaultUpdateState,
+    ...state,
+    running: Boolean(state.running),
+    progress: Math.max(0, Math.min(100, Number(state.progress) || 0)),
+    logs: Array.isArray(state.logs) ? state.logs.slice(-updateLogLimit) : [],
+    check: state.check && typeof state.check === 'object' ? state.check : null,
+  };
+}
+
+function persistUpdateState() {
+  fsp.mkdir(deployDir, { recursive: true })
+    .then(() => fsp.writeFile(updateStatePath, JSON.stringify(getOnlineUpdateStatus(), null, 2), 'utf8'))
+    .catch((error) => {
+      console.warn('Failed to persist update state:', error.message);
+    });
+}
+
+function safeWriteUpdateClient(client, chunk) {
+  if (client.res.destroyed || client.res.writableEnded) {
+    clearInterval(client.heartbeat);
+    updateClients.delete(client);
+    return;
+  }
+  try {
+    client.res.write(chunk);
+  } catch {
+    clearInterval(client.heartbeat);
+    updateClients.delete(client);
+  }
+}
+
+function publishUpdateEvent(event, payload) {
+  const data = JSON.stringify({
+    ...payload,
+    at: nowIso(),
+  });
+  for (const client of updateClients) {
+    safeWriteUpdateClient(client, `event: ${event}\ndata: ${data}\n\n`);
+  }
+}
+
+function updateStatePatch(patch, { event = 'update.state' } = {}) {
+  updateState = normalizeUpdateState({ ...updateState, ...patch });
+  persistUpdateState();
+  publishUpdateEvent(event, { state: getOnlineUpdateStatus() });
+}
+
 function appendUpdateLog(line) {
   const text = String(line || '').replace(/\r/g, '').trimEnd();
   if (!text) return;
+  const lines = [];
   text.split('\n').forEach((item) => {
-    updateState.logs.push(`[${new Date().toLocaleTimeString('zh-CN', { hour12: false })}] ${item}`);
+    const nextLine = `[${new Date().toLocaleTimeString('zh-CN', { hour12: false })}] ${item}`;
+    lines.push(nextLine);
+    updateState.logs.push(nextLine);
   });
   if (updateState.logs.length > updateLogLimit) {
     updateState.logs = updateState.logs.slice(updateState.logs.length - updateLogLimit);
   }
+  persistUpdateState();
+  publishUpdateEvent('update.log', { lines, state: getOnlineUpdateStatus() });
 }
 
 function httpUrl(value, fieldName, { optional = true } = {}) {
@@ -281,6 +379,37 @@ function commandName(name) {
   return name;
 }
 
+function runCaptureCommand(name, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const { allowFailure = false, ...spawnOptions } = options;
+    const child = spawn(commandName(name), args, {
+      cwd: projectRoot,
+      env: process.env,
+      windowsHide: true,
+      shell: false,
+      ...spawnOptions,
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk) => {
+      stdout += chunk.toString('utf8');
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr += chunk.toString('utf8');
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0 || allowFailure) {
+        resolve({ code, stdout, stderr });
+        return;
+      }
+      const error = new Error((stderr || stdout || `${name} 退出码 ${code}`).trim());
+      error.exitCode = code;
+      reject(error);
+    });
+  });
+}
+
 function runCommand(name, args, options = {}) {
   appendUpdateLog(`$ ${[name, ...args].join(' ')}`);
   return new Promise((resolve, reject) => {
@@ -306,6 +435,11 @@ function runCommand(name, args, options = {}) {
   });
 }
 
+function shortCommit(value) {
+  const text = String(value || '').trim();
+  return text ? text.slice(0, 8) : '';
+}
+
 function normalizeBranch(value) {
   const branch = String(value || process.env.UPDATE_BRANCH || 'main').trim();
   if (!/^[A-Za-z0-9._/-]{1,80}$/.test(branch) || branch.startsWith('-')) {
@@ -316,20 +450,124 @@ function normalizeBranch(value) {
   return branch;
 }
 
-async function runUpdate(branch) {
-  try {
-    appendUpdateLog(`开始从 GitHub 更新，分支：${branch}`);
-    await runCommand('git', ['fetch', 'origin', branch]);
-    await runCommand('git', ['checkout', branch]);
-    await runCommand('git', ['pull', '--ff-only', 'origin', branch]);
-    await runCommand('npm', ['ci']);
-    await runCommand('npm', ['run', 'build']);
+function normalizeCheckResult(check) {
+  if (!check || typeof check !== 'object') return null;
+  return {
+    status: check.status || 'unknown',
+    branch: check.branch || 'main',
+    checkedAt: check.checkedAt || null,
+    currentBranch: check.currentBranch || '',
+    localCommit: check.localCommit || '',
+    localShort: check.localShort || shortCommit(check.localCommit),
+    remoteCommit: check.remoteCommit || '',
+    remoteShort: check.remoteShort || shortCommit(check.remoteCommit),
+    hasUpdate: typeof check.hasUpdate === 'boolean' ? check.hasUpdate : null,
+    dirty: typeof check.dirty === 'boolean' ? check.dirty : null,
+    error: check.error || '',
+  };
+}
 
-    updateState.status = 'completed';
-    updateState.exitCode = 0;
+export function buildOnlineUpdateCheckResult({
+  branch,
+  checkedAt = nowIso(),
+  currentBranch = '',
+  localCommit = '',
+  remoteCommit = '',
+  dirty = false,
+  status = 'ok',
+  error = '',
+} = {}) {
+  return normalizeCheckResult({
+    status,
+    branch: branch || 'main',
+    checkedAt,
+    currentBranch,
+    localCommit,
+    localShort: shortCommit(localCommit),
+    remoteCommit,
+    remoteShort: shortCommit(remoteCommit),
+    hasUpdate: status === 'ok' ? Boolean(localCommit && remoteCommit && localCommit !== remoteCommit) : null,
+    dirty: status === 'ok' ? Boolean(dirty) : null,
+    error,
+  });
+}
+
+function setUpdatePhase(phase) {
+  const step = updateStepMap.get(phase);
+  if (!step) return;
+  updateStatePatch({
+    phase: step.phase,
+    currentStep: step.label,
+    progress: step.progress,
+  });
+  appendUpdateLog(step.label);
+}
+
+async function runUpdateStep(phase, command, args) {
+  setUpdatePhase(phase);
+  await runCommand(command, args);
+}
+
+export async function checkOnlineUpdate(payload = {}) {
+  const branch = normalizeBranch(payload.branch);
+  const checkedAt = nowIso();
+  try {
+    const [branchResult, headResult, dirtyResult, remoteResult] = await Promise.all([
+      runCaptureCommand('git', ['rev-parse', '--abbrev-ref', 'HEAD']),
+      runCaptureCommand('git', ['rev-parse', 'HEAD']),
+      runCaptureCommand('git', ['status', '--porcelain'], { allowFailure: true }),
+      runCaptureCommand('git', ['ls-remote', 'origin', `refs/heads/${branch}`]),
+    ]);
+    const localCommit = headResult.stdout.trim();
+    const remoteCommit = remoteResult.stdout.trim().split(/\s+/)[0] || '';
+    if (!remoteCommit) {
+      const error = new Error(`远端分支 origin/${branch} 不存在。`);
+      error.statusCode = 404;
+      throw error;
+    }
+    const check = buildOnlineUpdateCheckResult({
+      branch,
+      checkedAt,
+      currentBranch: branchResult.stdout.trim(),
+      localCommit,
+      remoteCommit,
+      dirty: Boolean(dirtyResult.stdout.trim()),
+    });
+    updateStatePatch({ branch, check, error: updateState.status === 'failed' ? updateState.error : '' });
+    return { check, update: getOnlineUpdateStatus() };
+  } catch (error) {
+    const check = buildOnlineUpdateCheckResult({
+      status: 'failed',
+      branch,
+      checkedAt,
+      error: error.message || '检查更新失败。',
+    });
+    updateStatePatch({ branch, check });
+    return { check, update: getOnlineUpdateStatus() };
+  }
+}
+
+async function runUpdate(branch, check) {
+  try {
+    updateStatePatch({
+      status: 'running',
+      running: true,
+      phase: 'checking',
+      currentStep: '检查版本',
+      progress: 8,
+      check,
+    });
+    appendUpdateLog(`开始从 GitHub 更新，分支：${branch}`);
+    await runUpdateStep('fetching', 'git', ['fetch', 'origin', branch]);
+    await runUpdateStep('checkout', 'git', ['checkout', branch]);
+    await runUpdateStep('pulling', 'git', ['pull', '--ff-only', 'origin', branch]);
+    await runUpdateStep('installing', 'npm', ['ci']);
+    await runUpdateStep('building', 'npm', ['run', 'build']);
+
     appendUpdateLog('代码更新和构建已完成。');
 
     if (process.env.pm_id !== undefined || process.env.PM2_APP) {
+      setUpdatePhase('restarting');
       const pm2App = String(process.env.PM2_APP || 'assistant-task-board').trim();
       appendUpdateLog(`准备通过 PM2 重启：${pm2App}`);
       const child = spawn(commandName('pm2'), ['restart', pm2App, '--update-env'], {
@@ -343,14 +581,32 @@ async function runUpdate(branch) {
     } else {
       appendUpdateLog('未检测到 PM2 环境，已跳过自动重启。');
     }
+    updateStatePatch({
+      status: 'completed',
+      phase: 'completed',
+      currentStep: '完成',
+      progress: 100,
+      exitCode: 0,
+      error: '',
+    });
   } catch (error) {
-    updateState.status = 'failed';
-    updateState.exitCode = error.exitCode ?? 1;
-    updateState.error = error.message;
+    updateStatePatch({
+      status: 'failed',
+      phase: updateState.phase || 'failed',
+      currentStep: `${updateState.currentStep || '更新'}失败`,
+      progress: Math.max(0, Math.min(99, Number(updateState.progress) || 0)),
+      exitCode: error.exitCode ?? 1,
+      error: error.message,
+    }, { event: 'update.error' });
     appendUpdateLog(`更新失败：${error.message}`);
   } finally {
-    updateState.running = false;
-    updateState.finishedAt = nowIso();
+    updateStatePatch({
+      running: false,
+      finishedAt: nowIso(),
+    });
+    if (updateState.status === 'completed') {
+      publishUpdateEvent('update.done', { state: getOnlineUpdateStatus() });
+    }
   }
 }
 
@@ -361,29 +617,85 @@ export function getOnlineUpdateStatus() {
     startedAt: updateState.startedAt,
     finishedAt: updateState.finishedAt,
     branch: updateState.branch,
+    phase: updateState.phase,
+    currentStep: updateState.currentStep,
+    progress: updateState.progress,
     exitCode: updateState.exitCode,
     error: updateState.error,
     logs: [...updateState.logs],
+    check: normalizeCheckResult(updateState.check),
+    steps: updateSteps.map((step) => ({ ...step })),
   };
 }
 
-export function startOnlineUpdate(payload = {}) {
+export async function startOnlineUpdate(payload = {}) {
   if (updateState.running) {
     const error = new Error('已有更新任务正在执行。');
     error.statusCode = 409;
     throw error;
   }
   const branch = normalizeBranch(payload.branch);
+  const check = (
+    updateState.check?.branch === branch && updateState.check?.status === 'ok'
+      ? normalizeCheckResult(updateState.check)
+      : (await checkOnlineUpdate({ branch })).check
+  );
+  if (check.status !== 'ok') {
+    const error = new Error(check.error || '检查更新失败，暂不能启动在线更新。');
+    error.statusCode = 502;
+    throw error;
+  }
+  if (!check.hasUpdate) {
+    updateStatePatch({
+      status: 'idle',
+      running: false,
+      branch,
+      phase: 'idle',
+      currentStep: '已是最新',
+      progress: 0,
+      error: '',
+      check,
+    });
+    const error = new Error('当前已经是最新版本，无需更新。');
+    error.statusCode = 409;
+    throw error;
+  }
   updateState = {
     status: 'running',
     running: true,
     startedAt: nowIso(),
     finishedAt: null,
     branch,
+    phase: 'checking',
+    currentStep: '检查版本',
+    progress: 8,
     exitCode: null,
     error: '',
     logs: [],
+    check,
   };
-  runUpdate(branch);
+  persistUpdateState();
+  publishUpdateEvent('update.state', { state: getOnlineUpdateStatus() });
+  runUpdate(branch, check);
   return getOnlineUpdateStatus();
+}
+
+export function openOnlineUpdateEventStream(req, res) {
+  res.status(200);
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+  res.write(`event: update.state\ndata: ${JSON.stringify({ state: getOnlineUpdateStatus(), at: nowIso() })}\n\n`);
+
+  const client = { res, heartbeat: null };
+  client.heartbeat = setInterval(() => {
+    safeWriteUpdateClient(client, ': keepalive\n\n');
+  }, 25000);
+  updateClients.add(client);
+  req.on('close', () => {
+    clearInterval(client.heartbeat);
+    updateClients.delete(client);
+  });
 }

@@ -47,8 +47,10 @@ import {
 } from './scripts/backup.js';
 import {
   changeAccessPassword,
+  checkOnlineUpdate,
   getOnlineUpdateStatus,
   getSettingsSnapshot,
+  openOnlineUpdateEventStream,
   saveAiSettings,
   startOnlineUpdate,
   testAiConnection,
@@ -1050,8 +1052,16 @@ app.get('/api/settings/update', asyncRoute(async (_req, res) => {
   res.json(getOnlineUpdateStatus());
 }));
 
+app.get('/api/settings/update/events', (req, res) => {
+  openOnlineUpdateEventStream(req, res);
+});
+
+app.post('/api/settings/update/check', asyncRoute(async (req, res) => {
+  res.json(await checkOnlineUpdate(req.body || {}));
+}));
+
 app.post('/api/settings/update', asyncRoute(async (req, res) => {
-  res.status(202).json(startOnlineUpdate(req.body || {}));
+  res.status(202).json(await startOnlineUpdate(req.body || {}));
 }));
 
 app.get('/api/backups', asyncRoute(async (req, res) => {
