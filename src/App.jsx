@@ -4859,6 +4859,8 @@ function RichNoteEditor({ value, onChange, pendingFiles, onPendingFilesChange, a
 function RichNoteViewer({ contentJson, fallback }) {
   const doc = contentJson || textToRichDoc(fallback || '');
 
+  const stopViewerLinkToggle = (event) => event.stopPropagation();
+
   const renderMarks = (text, marks = []) => {
     return marks.reduce((node, mark) => {
       if (mark.type === 'bold') return <strong>{node}</strong>;
@@ -4866,7 +4868,13 @@ function RichNoteViewer({ contentJson, fallback }) {
       if (mark.type === 'code') return <code>{node}</code>;
       if (mark.type === 'link') {
         return (
-          <a href={mark.attrs?.href} target="_blank" rel="noreferrer">
+          <a
+            href={mark.attrs?.href}
+            target="_blank"
+            rel="noreferrer"
+            onPointerDown={stopViewerLinkToggle}
+            onClick={stopViewerLinkToggle}
+          >
             {node}
           </a>
         );
@@ -4935,7 +4943,13 @@ function RichAttachmentNode({ attachment }) {
   if (attachment.isImage && attachment.previewUrl) {
     return (
       <figure className={pending ? 'rich-attachment-node image pending' : 'rich-attachment-node image'}>
-        <a href={attachment.previewUrl} target="_blank" rel="noreferrer">
+        <a
+          href={attachment.previewUrl}
+          target="_blank"
+          rel="noreferrer"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
           <img src={attachment.previewUrl} alt={name} />
         </a>
         <figcaption>{pending ? `${name} · 待保存上传` : name}</figcaption>
@@ -4944,7 +4958,14 @@ function RichAttachmentNode({ attachment }) {
   }
 
   return (
-    <a className={pending ? 'rich-attachment-node pending' : 'rich-attachment-node'} href={href} target="_blank" rel="noreferrer">
+    <a
+      className={pending ? 'rich-attachment-node pending' : 'rich-attachment-node'}
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
       <span className="rich-attachment-icon">
         <FileText size={16} />
       </span>
@@ -5242,11 +5263,23 @@ function AttachmentCardList({ attachments = [], onDelete, emptyText = '暂无附
   }
 
   return (
-    <div className="attachment-card-list">
+    <div
+      className="attachment-card-list"
+      data-note-no-toggle
+      onPointerDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
       {attachments.map((attachment) => (
         <article className={attachment.isImage ? 'attachment-item image' : 'attachment-item'} key={attachment.id}>
           {attachment.isImage ? (
-            <a href={attachment.previewUrl} target="_blank" rel="noreferrer" className="attachment-preview">
+            <a
+              href={attachment.previewUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="attachment-preview"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
               <img src={attachment.previewUrl} alt={attachment.originalName} />
             </a>
           ) : (
@@ -5270,14 +5303,24 @@ function AttachmentCardList({ attachments = [], onDelete, emptyText = '暂无附
             />
           </div>
           <div className="attachment-actions">
-            <a className="round-button small" href={attachment.downloadUrl} title="下载文件">
+            <a
+              className="round-button small"
+              href={attachment.downloadUrl}
+              title="下载文件"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
+            >
               <Download size={13} />
             </a>
             {onDelete && (
               <button
                 className="round-button small"
                 type="button"
-                onClick={() => onDelete(attachment)}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDelete(attachment);
+                }}
                 title="删除附件"
               >
                 <Trash2 size={13} />
@@ -5933,6 +5976,38 @@ const NoteItem = forwardRef(function NoteItem(
     versions: [],
     selectedId: null,
   });
+  const [isExpanded, setIsExpanded] = useState(false);
+  const skippedDragClickRef = useRef(false);
+  const noteContentId = `note-content-${note.id}`;
+
+  useEffect(() => {
+    if (isDragging) {
+      skippedDragClickRef.current = true;
+      return undefined;
+    }
+    if (!skippedDragClickRef.current) return undefined;
+    const timer = window.setTimeout(() => {
+      skippedDragClickRef.current = false;
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [isDragging]);
+
+  function shouldIgnoreExpandToggle(target) {
+    return Boolean(target?.closest?.('button,a,input,textarea,select,label,[data-note-no-toggle]'));
+  }
+
+  function toggleNoteExpanded() {
+    setIsExpanded((current) => !current);
+  }
+
+  function handleNoteCardClick(event) {
+    if (skippedDragClickRef.current) {
+      skippedDragClickRef.current = false;
+      return;
+    }
+    if (shouldIgnoreExpandToggle(event.target)) return;
+    toggleNoteExpanded();
+  }
 
   async function openVersionHistory() {
     setVersionState({
@@ -6136,7 +6211,9 @@ const NoteItem = forwardRef(function NoteItem(
       style={style}
       data-note-id={note.id}
       data-category={note.category}
-      className={`note-item ${isDragging ? 'is-dragging' : ''} ${isFocusTarget ? 'is-focus-target' : ''}`}
+      className={`note-item ${isExpanded ? 'is-expanded' : ''} ${isDragging ? 'is-dragging' : ''} ${isFocusTarget ? 'is-focus-target' : ''}`}
+      aria-expanded={isExpanded}
+      onClick={handleNoteCardClick}
       {...(dragAttributes || {})}
       {...(dragListeners || {})}
     >
@@ -6163,17 +6240,38 @@ const NoteItem = forwardRef(function NoteItem(
         </div>
       )}
       <h4>{note.title || '未命名笔记'}</h4>
-      <div className="note-preview-shell">
+      <div id={noteContentId} className="note-preview-shell">
         <RichNoteViewer contentJson={note.contentJson} fallback={note.content} />
       </div>
+      <button
+        className="note-expand-toggle"
+        type="button"
+        data-note-no-toggle
+        aria-expanded={isExpanded}
+        aria-controls={noteContentId}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          toggleNoteExpanded();
+        }}
+      >
+        {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+        <span>{isExpanded ? '收起' : '展开全文'}</span>
+      </button>
       {note.attachment && (
-        <div className="note-attachment">
+        <div
+          className="note-attachment"
+          data-note-no-toggle
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => event.stopPropagation()}
+        >
           {note.attachment.isImage ? (
             <a
               href={note.attachment.previewUrl}
               target="_blank"
               rel="noreferrer"
               onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => event.stopPropagation()}
             >
               <img src={note.attachment.previewUrl} alt={note.attachment.originalName} />
             </a>
@@ -6197,6 +6295,7 @@ const NoteItem = forwardRef(function NoteItem(
             href={note.attachment.downloadUrl}
             title="下载关联附件"
             onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
           >
             <Download size={13} />
           </a>

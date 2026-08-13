@@ -4320,6 +4320,7 @@ textarea {
   max-height: 230px;
   overflow: hidden;
   border-radius: var(--radius-sm);
+  transition: max-height 0.24s ease, opacity 0.2s ease;
 }
 
 .note-preview-shell::after {
@@ -4339,6 +4340,45 @@ textarea {
 
 [data-theme='dark'] .note-item .note-preview-shell::after {
   background: linear-gradient(to bottom, transparent, rgba(31, 41, 55, 0.96));
+}
+
+.note-item.is-expanded .note-preview-shell {
+  max-height: none;
+  overflow: visible;
+}
+
+.note-item.is-expanded .note-preview-shell::after {
+  display: none;
+}
+
+.note-expand-toggle {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-height: 32px;
+  border: 1px solid color-mix(in srgb, var(--category-color) 24%, var(--border-color));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--category-bg) 70%, var(--bg-panel));
+  color: var(--category-color);
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.note-expand-toggle:hover {
+  border-color: var(--category-color);
+  background: var(--category-bg);
+  box-shadow: 0 6px 16px var(--category-glow);
+  transform: translateY(-1px);
+}
+
+.note-expand-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--category-color) 55%, transparent);
+  outline-offset: 2px;
 }
 
 .rich-attachment-node figcaption {
@@ -4992,7 +5032,7 @@ textarea {
   background: var(--bg-card);
   padding: 16px;
   box-shadow: var(--shadow-sm);
-  cursor: grab;
+  cursor: pointer;
   transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
               border-color 0.28s ease,
               box-shadow 0.28s ease,
@@ -5000,7 +5040,7 @@ textarea {
 }
 
 .note-item:active {
-  cursor: grabbing;
+  cursor: pointer;
 }
 
 [data-theme='light'] .note-item {
@@ -5019,6 +5059,11 @@ textarea {
   transform: translateY(-3px);
   border-color: var(--category-color);
   box-shadow: var(--shadow-md), 0 4px 18px var(--category-glow);
+}
+
+.note-item.is-expanded {
+  border-color: color-mix(in srgb, var(--category-color) 48%, var(--border-color));
+  box-shadow: var(--shadow-md), 0 8px 24px var(--category-glow);
 }
 
 .note-item.is-focus-target {
@@ -5043,6 +5088,7 @@ textarea {
 }
 
 .note-item.is-dragging {
+  cursor: grabbing;
   opacity: 0.15;
   border: 1.5px dashed var(--category-color);
   background: transparent;
