@@ -1,7 +1,53 @@
 import assert from 'node:assert/strict';
-import { planAiActionRequest } from '../ai/action-planner.js';
-import { answerWorkspace, classifyAiQueryIntent } from '../ai/search.js';
-import { closePool, ensureDatabase, getPool } from '../db.js';
+import http from 'node:http';
+
+const modelCalls = [];
+const modelServer = http.createServer(async (req, res) => {
+  if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
+    res.writeHead(404).end();
+    return;
+  }
+
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  const payload = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  const prompt = String(payload.messages?.at(-1)?.content || '');
+  modelCalls.push({ prompt, stream: Boolean(payload.stream) });
+  const detail = prompt.includes('1.50') ? '数据库记录耗时 1.50 小时。' : '已读取本次数据库查询结果。';
+  const answer = `<section class="ai-fact-panel"><h3>数据库事实</h3><p>模型回答：${detail}</p></section>`;
+
+  if (payload.stream) {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream; charset=utf-8' });
+    for (const delta of [answer.slice(0, 36), answer.slice(36)]) {
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: delta } }] })}\n\n`);
+    }
+    res.end('data: [DONE]\n\n');
+    return;
+  }
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({
+    id: 'chatcmpl-ai-smoke',
+    object: 'chat.completion',
+    created: Math.floor(Date.now() / 1000),
+    model: payload.model,
+    choices: [{ index: 0, message: { role: 'assistant', content: answer }, finish_reason: 'stop' }],
+    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+  }));
+});
+
+await new Promise((resolve) => modelServer.listen(0, '127.0.0.1', resolve));
+const modelPort = modelServer.address().port;
+process.env.LITELLM_BASE_URL = `http://127.0.0.1:${modelPort}/v1`;
+process.env.LITELLM_API_KEY = 'ai-smoke-key';
+process.env.LITELLM_CHAT_MODEL = 'ai-smoke-model';
+process.env.AI_INDEXING_ENABLED = 'false';
+
+const [{ planAiActionRequest }, { answerWorkspace, classifyAiQueryIntent, streamAnswerWorkspace }, { closePool, ensureDatabase, getPool }] = await Promise.all([
+  import('../ai/action-planner.js'),
+  import('../ai/search.js'),
+  import('../db.js'),
+]);
 
 const marker = `__ai_chat_smoke_${Date.now()}__`;
 let taskId;
@@ -55,17 +101,21 @@ try {
 
   const incomplete = await answerWorkspace('我还有哪些任务没有完成？');
   assert.equal(incomplete.grounded, true);
+  assert.equal(incomplete.generatedByModel, true);
   assert.equal(incomplete.intent, 'incomplete_tasks');
+  assert.match(incomplete.answer, /模型回答/);
   assert.ok(incomplete.sources.some((source) => source.taskId === taskId));
   assert.ok(incomplete.sources.every((source) => source.entityType === 'task'));
 
   const today = await answerWorkspace('今天做了什么？');
   assert.equal(today.grounded, true);
+  assert.equal(today.generatedByModel, true);
   assert.equal(today.intent, 'log_today');
   assert.ok(today.sources.some((source) => Number(source.entityId) === logId));
   assert.match(today.answer, /1\.50/);
 
   const progress = await answerWorkspace(`${marker}进度怎么样？`);
+  assert.equal(progress.generatedByModel, true);
   assert.equal(progress.intent, 'task_progress');
   assert.ok(progress.sources.some((source) => source.entityType === 'task' && source.taskId === taskId));
   assert.ok(progress.sources.some((source) => source.entityType === 'log' && Number(source.entityId) === logId));
@@ -78,14 +128,27 @@ try {
   assert.equal(actionPlan.intent, 'action_update_task');
   assert.equal(actionPlan.actionRequests.length, 1);
   actionId = Number(actionPlan.actionRequests[0].id);
-  assert.equal(actionPlan.actionRequests[0].source, 'ai_chat');
-  assert.equal(actionPlan.actionRequests[0].status, 'pending');
+  const actionAnswer = await answerWorkspace(`帮我把${marker}改成已完成`, { actionPlan });
+  assert.equal(actionAnswer.generatedByModel, true);
+  assert.equal(actionAnswer.actionRequests.length, 1);
+  assert.match(actionAnswer.answer, /模型回答/);
+
+  let streamedAnswer = '';
+  const streamed = await streamAnswerWorkspace('我还有哪些任务没有完成？', {}, {
+    onDelta: (delta) => { streamedAnswer += delta; },
+  });
+  assert.equal(streamed.generatedByModel, true);
+  assert.match(streamedAnswer, /模型回答/);
 
   const [[unchangedTask]] = await db.query('SELECT status, progress FROM tasks WHERE id = ?', [taskId]);
   assert.equal(unchangedTask.status, 'in_progress');
   assert.equal(Number(unchangedTask.progress), 35);
 
-  console.log('AI chat smoke test passed: database answers, relevant sources, and approval-only actions work.');
+  assert.equal(modelCalls.length, 5);
+  assert.ok(modelCalls.every((call) => call.prompt.includes('本次任务台数据库查询结果')));
+  assert.equal(modelCalls.filter((call) => call.stream).length, 1);
+
+  console.log('AI chat smoke test passed: every answer uses the model with database context and approval-only actions.');
 } finally {
   const db = getPool();
   if (actionId) await db.query('DELETE FROM mcp_action_requests WHERE id = ?', [actionId]);
@@ -94,4 +157,5 @@ try {
   if (logId) await db.query('DELETE FROM work_logs WHERE id = ?', [logId]);
   if (taskId) await db.query('DELETE FROM tasks WHERE id = ?', [taskId]);
   await closePool();
+  await new Promise((resolve) => modelServer.close(resolve));
 }

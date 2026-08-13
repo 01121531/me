@@ -362,23 +362,32 @@ function isMediaSaveCommand(text) {
   return /保存(?:到|至|为).*(任务|笔记)|(?:任务|笔记).*(?:保存|存入)/i.test(String(text || ''));
 }
 
+function mediaSavePlan(answer, actionRequests = []) {
+  return {
+    intent: 'action_save_weixin_media',
+    answer,
+    sources: [],
+    grounded: actionRequests.length > 0,
+    facts: actionRequests.map((action) => ({ type: 'action_request', id: action.id, title: action.title })),
+    suggestions: [],
+    actionRequests,
+  };
+}
+
 async function createMediaSaveRequests(text, accountId, peerId, currentMedia = []) {
   if (!isMediaSaveCommand(text)) return null;
   const media = currentMedia.length
     ? currentMedia
     : await listRecentTemporaryMedia(accountId, peerId, { limit: 1 });
   if (!media.length) {
-    return { answer: '没有找到可保存的临时图片或文件，请先在微信中发送附件。', actionRequests: [] };
+    return mediaSavePlan('没有找到可保存的临时图片或文件，请先在微信中发送附件。');
   }
 
   const taskId = parsePositiveId(text, '任务');
   const noteId = parsePositiveId(text, '笔记');
   const createAsNote = /保存为(?:一篇|一个)?笔记/i.test(text);
   if (!taskId && !noteId && !createAsNote) {
-    return {
-      answer: '请说明保存位置，例如“保存到任务 #3”“保存到笔记 #8”或“保存为笔记”。',
-      actionRequests: [],
-    };
+    return mediaSavePlan('请说明保存位置，例如“保存到任务 #3”“保存到笔记 #8”或“保存为笔记”。');
   }
 
   const selected = createAsNote ? media.slice(0, 1) : media;
@@ -410,10 +419,10 @@ async function createMediaSaveRequests(text, accountId, peerId, currentMedia = [
     });
     actionRequests.push(request);
   }
-  return {
-    answer: `已生成 ${actionRequests.length} 条待审批操作。请到任务台顶部“审批”中确认，确认前附件仍只保存在临时区。`,
+  return mediaSavePlan(
+    `已生成 ${actionRequests.length} 条待审批操作。请到任务台顶部“审批”中确认，确认前附件仍只保存在临时区。`,
     actionRequests,
-  };
+  );
 }
 
 function referencesRecentMedia(text) {
@@ -485,21 +494,17 @@ async function processIncomingMessage(message) {
   appendLog(`收到微信消息${receivedMedia.length ? `，含 ${receivedMedia.length} 个临时附件` : ''}。`);
 
   try {
-    const mediaSave = await createMediaSaveRequests(question, credentials.accountId, peerId, receivedMedia);
-    if (mediaSave) {
-      await sendTextReply(peerId, contextToken, mediaSave.answer);
-      return;
-    }
-
     const conversation = await ensureConversation(credentials.accountId, peerId);
     const history = await conversationHistory(conversation.id);
-    const actionPlan = await planAiActionRequest(question, {
+    const mediaSave = await createMediaSaveRequests(question, credentials.accountId, peerId, receivedMedia);
+    const actionPlan = mediaSave || await planAiActionRequest(question, {
       requestedBy: `weixin:${peerId}`,
       source: 'weixin',
     });
-    const result = actionPlan || await answerWorkspace(question, {
+    const result = await answerWorkspace(question, {
       messages: history,
       additionalContext: mediaContext(media),
+      actionPlan,
     });
     await saveConversationExchange(conversation.id, question, result);
     const plainText = htmlToPlainText(result.answer || '暂时没有可用回答。');

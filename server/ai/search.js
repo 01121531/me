@@ -9,7 +9,8 @@ let chatModelSignature = '';
 
 const workspaceAssistantPrompt = [
   '你是个人助理任务台的工作助手。',
-  '数据库事实只能来自下方提供的任务台资料；资料不足时必须明确说明缺少什么，禁止自行补全。',
+  '每一次回答都必须基于本次提供的任务台数据库查询结果进行理解和组织；这些查询结果是工作区事实的唯一数据库。',
+  '数据库事实只能来自下方提供的任务台资料；查询结果为零也是有效事实，资料不足时必须明确说明缺少什么，禁止自行补全。',
   '回答使用中文，简洁，并在相关句子后标注来源编号，例如 [1]。',
   '回答必须把事实和建议分开：事实放在标题为“数据库事实”的区块；只有用户需要分析或下一步时才增加标题为“AI 建议”的区块。',
   '建议必须明确标注为建议，不得把建议描述成已经发生的任务、日志、日期、进度或附件内容。',
@@ -22,8 +23,6 @@ const workspaceAssistantPrompt = [
   '不要编造任务、时间、进度、日志、笔记或附件内容。',
 ].join('\n');
 
-const noWorkspaceContextAnswer = '<p>没有检索到足够的任务台资料，因此无法确认答案。</p>';
-const noTaskContextAnswer = '<p>没有检索到足够相关的任务资料，因此无法确认答案。</p>';
 const emptyModelAnswer = '<p>模型没有返回可用答案。</p>';
 const taskSourceTypes = new Set(['task', 'log', 'task_attachment', 'log_attachment']);
 const noteSourceTypes = new Set(['note', 'note_attachment']);
@@ -152,6 +151,53 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function htmlToDatabaseText(value) {
+  return String(value || '')
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|section|article|header|h[1-6]|li|tr|blockquote|pre)>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '- ')
+    .replace(/<dt[^>]*>/gi, '')
+    .replace(/<\/dt>/gi, '：')
+    .replace(/<dd[^>]*>/gi, '')
+    .replace(/<\/dd>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+function mergeSources(...groups) {
+  const seen = new Set();
+  return groups.flat().filter((source) => {
+    const key = String(source?.id || `${source?.entityType || ''}:${source?.entityId || ''}`);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function actionPlanContext(actionPlan) {
+  if (!actionPlan) return '';
+  const actions = (actionPlan.actionRequests || []).map((action) => {
+    const payload = action.payload || action.payload_json || {};
+    return [
+      `操作：${action.title || action.action_type || action.actionType || '待审批操作'}`,
+      `状态：${action.status || 'pending'}（用户确认前不得视为已执行）`,
+      `参数：${JSON.stringify(payload)}`,
+    ].join('\n');
+  });
+  return [
+    '[待审批操作规划]',
+    htmlToDatabaseText(actionPlan.answer),
+    ...actions,
+  ].filter(Boolean).join('\n');
 }
 
 function normalizeActionUrl(value) {
@@ -1372,21 +1418,54 @@ async function retrieveWorkspaceHits(question, options = {}) {
 }
 
 async function createAnswerContext(question, options = {}) {
-  const intent = options.intent || classifyAiQueryIntent(question);
-  const hits = await retrieveWorkspaceHits(question, { ...options, intent, limit: normalizeLimit(options.limit, 6, 12) });
+  const requestedIntent = options.intent || classifyAiQueryIntent(question);
+  const prepared = options.additionalContext || options.actionPlan
+    ? null
+    : await answerDeterministicQuestion(question, { ...options, intent: requestedIntent });
+  const intent = options.actionPlan?.intent || prepared?.intent || requestedIntent;
+  const hits = prepared || options.actionPlan
+    ? []
+    : await retrieveWorkspaceHits(question, { ...options, intent, limit: normalizeLimit(options.limit, 6, 12) });
   const additionalContext = String(options.additionalContext || '').trim();
-  const databaseContext = hits
-    .map((hit, index) => `[${index + 1}] ${hit.text.slice(0, 1800)}`)
-    .join('\n\n');
+  const preparedSources = prepared?.sources || [];
+  const hitSources = hits.map(toSource);
+  const actionSources = options.actionPlan?.sources || [];
+  const sources = mergeSources(preparedSources, hitSources, actionSources);
+  const databaseContext = prepared
+    ? [
+        '[数据库结构化查询结果]',
+        htmlToDatabaseText(prepared.answer) || '查询结果为 0 条。',
+        ...preparedSources.map((source, index) => `[${index + 1}] ${source.excerpt || source.label || ''}`),
+      ].filter(Boolean).join('\n\n')
+    : hits.length
+      ? hits.map((hit, index) => `[${index + 1}] ${hit.text.slice(0, 1800)}`).join('\n\n')
+      : '[数据库检索结果]\n没有检索到与当前问题匹配的记录。';
+  const actionContext = actionPlanContext(options.actionPlan);
+  const actionSourceContext = actionSources.length
+    ? ['[操作目标数据库记录]', ...actionSources.map((source, index) => `[${index + 1}] ${source.excerpt || source.label || ''}`)].join('\n')
+    : '';
+  const facts = [
+    ...(prepared?.facts || sources.map((source) => ({
+      type: source.entityType,
+      id: source.entityId,
+      reason: source.reason,
+      matchedFields: source.matchedFields,
+    }))),
+    ...(options.actionPlan?.facts || []),
+  ];
   return {
     intent,
     hits,
-    sources: hits.map(toSource),
+    sources,
     context: [
       databaseContext,
       additionalContext ? `[微信临时资料]\n${additionalContext.slice(0, 12000)}` : '',
+      actionSourceContext,
+      actionContext,
     ].filter(Boolean).join('\n\n'),
-    hasAdditionalContext: Boolean(additionalContext),
+    grounded: Boolean(prepared?.grounded || hits.length || additionalContext || options.actionPlan?.grounded),
+    facts,
+    actionRequests: options.actionPlan?.actionRequests || [],
   };
 }
 
@@ -1396,7 +1475,7 @@ function buildAnswerMessages(question, context, history = [], intent = 'general'
     ...normalizeChatHistory(history),
     {
       role: 'user',
-      content: `问题意图：${intent}\n当前问题：${question}\n\n任务台数据库资料：\n${context}\n\n请先给出“数据库事实”；如果问题需要判断、规划或下一步，再单独给出“AI 建议”。`,
+      content: `问题意图：${intent}\n当前问题：${question}\n\n本次任务台数据库查询结果：\n${context}\n\n请依据查询结果生成最终回答。先给出“数据库事实”；如果问题需要判断、规划或下一步，再单独给出“AI 建议”。如果存在待审批操作，只能说明已经生成待审批操作，禁止说成已经执行。`,
     },
   ];
 }
@@ -1446,23 +1525,7 @@ export async function searchWorkspace(question, options = {}) {
 }
 
 export async function answerWorkspace(question, options = {}) {
-  const deterministic = options.additionalContext
-    ? null
-    : await answerDeterministicQuestion(question, options);
-  if (deterministic) return deterministic;
-
-  const { hits, sources, context, intent, hasAdditionalContext } = await createAnswerContext(question, options);
-  if (!hits.length && !hasAdditionalContext) {
-    return {
-      answer: isTaskLikeIntent(intent) ? noTaskContextAnswer : noWorkspaceContextAnswer,
-      sources: [],
-      grounded: false,
-      intent,
-      facts: [],
-      suggestions: [],
-      actionRequests: [],
-    };
-  }
+  const { sources, context, intent, grounded, facts, actionRequests } = await createAnswerContext(question, options);
 
   const response = await getChatModel().chat({
     messages: buildAnswerMessages(question, context, options.messages, intent),
@@ -1471,47 +1534,20 @@ export async function answerWorkspace(question, options = {}) {
   return {
     answer,
     sources,
-    grounded: Boolean(hits.length || hasAdditionalContext),
+    grounded,
     intent,
-    facts: sources.map((source) => ({
-      type: source.entityType,
-      id: source.entityId,
-      reason: source.reason,
-      matchedFields: source.matchedFields,
-    })),
+    facts,
     suggestions: [],
-    actionRequests: [],
+    actionRequests,
+    generatedByModel: true,
   };
 }
 
 export async function streamAnswerWorkspace(question, options = {}, handlers = {}) {
-  const deterministic = options.additionalContext
-    ? null
-    : await answerDeterministicQuestion(question, options);
-  if (deterministic) {
-    handlers.onIntent?.(deterministic.intent);
-    handlers.onSources?.(deterministic.sources);
-    handlers.onDelta?.(deterministic.answer);
-    handlers.onDone?.({
-      grounded: deterministic.grounded,
-      intent: deterministic.intent,
-      facts: deterministic.facts,
-      suggestions: deterministic.suggestions,
-      actionRequests: deterministic.actionRequests,
-    });
-    return deterministic;
-  }
-
-  const { hits, sources, context, intent, hasAdditionalContext } = await createAnswerContext(question, options);
+  const { sources, context, intent, grounded, facts, actionRequests } = await createAnswerContext(question, options);
   handlers.onIntent?.(intent);
   handlers.onSources?.(sources);
-
-  if (!hits.length && !hasAdditionalContext) {
-    const answer = isTaskLikeIntent(intent) ? noTaskContextAnswer : noWorkspaceContextAnswer;
-    handlers.onDelta?.(answer);
-    handlers.onDone?.({ grounded: false, intent, facts: [], suggestions: [], actionRequests: [] });
-    return { answer, sources: [], grounded: false, intent, facts: [], suggestions: [], actionRequests: [] };
-  }
+  handlers.onActionRequests?.(actionRequests);
 
   const payload = {
     model: config.ai.litellm.chatModel,
@@ -1565,13 +1601,6 @@ export async function streamAnswerWorkspace(question, options = {}, handlers = {
     answer = emptyModelAnswer;
     handlers.onDelta?.(answer);
   }
-  const facts = sources.map((source) => ({
-    type: source.entityType,
-    id: source.entityId,
-    reason: source.reason,
-    matchedFields: source.matchedFields,
-  }));
-  const grounded = Boolean(hits.length || hasAdditionalContext);
-  handlers.onDone?.({ grounded, intent, facts, suggestions: [], actionRequests: [] });
-  return { answer, sources, grounded, intent, facts, suggestions: [], actionRequests: [] };
+  handlers.onDone?.({ grounded, intent, facts, suggestions: [], actionRequests, generatedByModel: true });
+  return { answer, sources, grounded, intent, facts, suggestions: [], actionRequests, generatedByModel: true };
 }

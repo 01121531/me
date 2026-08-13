@@ -1233,7 +1233,11 @@ app.post('/api/ai/ask', asyncRoute(async (req, res) => {
       taskId,
       requestedBy: req.auth?.id || req.auth?.type || 'local-ai',
     });
-    res.json(actionPlan || await answerWorkspace(question, { taskId, messages: req.body.messages }));
+    res.json(await answerWorkspace(question, {
+      taskId,
+      messages: req.body.messages,
+      actionPlan,
+    }));
   } catch (error) {
     console.error('AI answer failed:', error.message);
     res.status(503).json({ message: '智能问答暂不可用，请检查索引 Worker、Qdrant 与 LiteLLM 配置。' });
@@ -1423,35 +1427,20 @@ app.post('/api/ai/ask-stream', asyncRoute(async (req, res) => {
       taskId,
       requestedBy: req.auth?.id || req.auth?.type || 'local-ai',
     });
-    let result;
-    if (actionPlan) {
-      result = actionPlan;
-      writeSseEvent(res, 'intent', actionPlan.intent);
-      writeSseEvent(res, 'sources', actionPlan.sources || []);
-      writeSseEvent(res, 'actionRequests', actionPlan.actionRequests || []);
-      writeSseEvent(res, 'delta', actionPlan.answer);
-      finalPayload = {
-        grounded: actionPlan.grounded,
-        intent: actionPlan.intent,
-        facts: actionPlan.facts,
-        suggestions: actionPlan.suggestions,
-        actionRequests: actionPlan.actionRequests,
-      };
-    } else {
-      result = await streamAnswerWorkspace(question, {
-        taskId,
-        messages: req.body.messages,
-        signal: controller.signal,
-      }, {
-        onIntent: (intent) => writeSseEvent(res, 'intent', intent),
-        onSources: (sources) => writeSseEvent(res, 'sources', sources),
-        onActionRequests: (actions) => writeSseEvent(res, 'actionRequests', actions),
-        onDelta: (delta) => writeSseEvent(res, 'delta', delta),
-        onDone: (payload) => {
-          finalPayload = payload || {};
-        },
-      });
-    }
+    const result = await streamAnswerWorkspace(question, {
+      taskId,
+      messages: req.body.messages,
+      signal: controller.signal,
+      actionPlan,
+    }, {
+      onIntent: (intent) => writeSseEvent(res, 'intent', intent),
+      onSources: (sources) => writeSseEvent(res, 'sources', sources),
+      onActionRequests: (actions) => writeSseEvent(res, 'actionRequests', actions),
+      onDelta: (delta) => writeSseEvent(res, 'delta', delta),
+      onDone: (payload) => {
+        finalPayload = payload || {};
+      },
+    });
     const savedConversation = await saveAiExchange(
       conversation.id,
       question,
