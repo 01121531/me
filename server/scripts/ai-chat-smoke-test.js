@@ -133,6 +133,7 @@ try {
   assert.equal(incomplete.grounded, true);
   assert.equal(incomplete.generatedByModel, true);
   assert.equal(incomplete.intent, 'incomplete_tasks');
+  assert.equal(incomplete.dataRoute.provider, 'mysql');
   assert.match(incomplete.answer, /模型回答/);
   assert.ok(incomplete.sources.some((source) => source.taskId === taskId));
   assert.ok(incomplete.sources.every((source) => source.entityType === 'task'));
@@ -147,6 +148,7 @@ try {
   const progress = await answerWorkspace(`${marker}进度怎么样？`);
   assert.equal(progress.generatedByModel, true);
   assert.equal(progress.intent, 'task_progress');
+  assert.equal(progress.dataRoute.provider, 'mysql');
   assert.ok(progress.sources.some((source) => source.entityType === 'task' && source.taskId === taskId));
   assert.ok(progress.sources.some((source) => source.entityType === 'log' && Number(source.entityId) === logId));
   assert.ok(progress.sources.some((source) => source.entityType === 'note' && Number(source.entityId) === taskNoteId));
@@ -154,6 +156,7 @@ try {
 
   const inventory = await answerWorkspace('全部的附件');
   assert.equal(inventory.intent, 'attachment_search');
+  assert.equal(inventory.dataRoute.provider, 'mysql');
   assert.ok(inventory.sources.some((source) => source.entityType === 'task_attachment' && Number(source.entityId) === taskAttachmentId));
   assert.ok(inventory.sources.some((source) => source.entityType === 'note_attachment' && Number(source.entityId) === noteAttachmentId));
   assert.ok(inventory.sources.every((source) => source.entityType.endsWith('_attachment')));
@@ -175,6 +178,7 @@ try {
   const actionAnswer = await answerWorkspace(`帮我把${marker}改成已完成`, { actionPlan });
   assert.equal(actionAnswer.generatedByModel, true);
   assert.equal(actionAnswer.actionRequests.length, 1);
+  assert.equal(actionAnswer.dataRoute.provider, 'approval');
   assert.match(actionAnswer.answer, /模型回答/);
 
   let streamedAnswer = '';

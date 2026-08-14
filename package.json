@@ -22,6 +22,7 @@
     "smoke:mcp": "node server/scripts/mcp-read-smoke-test.js",
     "smoke:mcp-actions": "node server/scripts/mcp-action-smoke-test.js",
     "smoke:ai-chat": "node server/scripts/ai-chat-smoke-test.js",
+    "smoke:analytics": "node server/scripts/analytics-readiness-smoke-test.js",
     "smoke:weixin": "node server/scripts/weixin-smoke-test.js",
     "smoke:update-check": "node server/scripts/update-check-smoke-test.js",
     "ocr:backfill": "node server/scripts/ocr-backfill.js"

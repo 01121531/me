@@ -33,6 +33,7 @@ async function main() {
     printCheckGroup('运行配置', result.runtimeConfig);
     printCheckGroup('数据库', result.database);
     printCheckGroup('附件存储', result.attachments);
+    printCheckGroup('分析层', result.analytics);
     printAttachmentSummary(result.attachments);
   }
 

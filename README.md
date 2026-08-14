@@ -52,6 +52,10 @@ APP_DIR=/srv/assistant-task-board BRANCH=main bash scripts/deploy/update-from-gi
 - `npm run build`
 - `pm2 restart assistant-task-board --update-env`
 
+## Doris MCP 路线
+
+当前继续使用 MySQL、自建 MCP 和 LlamaIndex/Qdrant，不部署 Doris。启用阈值、允许同步字段和未来试点步骤见 [DORIS_MCP_ROADMAP.md](./DORIS_MCP_ROADMAP.md)。运行 `npm run check:system` 可以查看当前分析数据规模和 Doris 就绪度。
+
 ## 敏感信息
 
 不要提交以下内容：

@@ -2,6 +2,7 @@ import { promises as fsp, constants as fsConstants } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { config } from './config.js';
+import { getAnalyticsReadiness } from './analytics-readiness.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -477,14 +478,52 @@ export async function checkAttachmentStorage(db) {
   };
 }
 
+export async function checkAnalyticsLayer(db) {
+  try {
+    const readiness = await getAnalyticsReadiness(db);
+    const pilotRecommended = readiness.recommendation === 'pilot';
+    return {
+      status: pilotRecommended ? 'warning' : 'ok',
+      ...readiness,
+      checks: [makeCheck(
+        'Doris 分析层',
+        pilotRecommended ? 'warning' : 'ok',
+        pilotRecommended
+          ? `已命中 ${readiness.triggered.length} 个启用条件，建议评估独立 Doris 试点；当前仍使用 MySQL。`
+          : `当前分析数据 ${readiness.metrics.analyticsRows} 行，继续使用 MySQL，无需部署 Doris。`,
+        {
+          provider: readiness.provider,
+          dorisEnabled: readiness.dorisEnabled,
+          recommendation: readiness.recommendation,
+          metrics: readiness.metrics,
+          thresholds: readiness.thresholds,
+          triggers: readiness.triggers,
+          tableRows: readiness.tableRows,
+        },
+      )],
+    };
+  } catch (error) {
+    return {
+      status: 'warning',
+      provider: 'mysql',
+      dorisEnabled: false,
+      recommendation: 'keep_mysql',
+      checks: [makeCheck('Doris 分析层', 'warning', '无法计算 Doris 启用条件，当前继续使用 MySQL。', {
+        error: error.message,
+      })],
+    };
+  }
+}
+
 export async function runSystemChecks(db) {
-  const [runtimeConfig, database, attachments] = await Promise.all([
+  const [runtimeConfig, database, attachments, analytics] = await Promise.all([
     checkRuntimeConfig(),
     checkDatabase(db),
     checkAttachmentStorage(db),
+    checkAnalyticsLayer(db),
   ]);
 
-  const status = worstStatus(runtimeConfig.status, database.status, attachments.status);
+  const status = worstStatus(runtimeConfig.status, database.status, attachments.status, analytics.status);
   return {
     status,
     generatedAt: new Date().toISOString(),
@@ -492,5 +531,6 @@ export async function runSystemChecks(db) {
     runtimeConfig,
     database,
     attachments,
+    analytics,
   };
 }

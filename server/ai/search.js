@@ -1,6 +1,7 @@
 import { OpenAI } from '@llamaindex/openai';
 import { config } from '../config.js';
 import { getPool } from '../db.js';
+import { resolveAiDataRoute } from '../analytics-readiness.js';
 import { toNullableText } from '../validators.js';
 import { retrieveRelevantNodes } from './vector-store.js';
 
@@ -1509,6 +1510,10 @@ async function createAnswerContext(question, options = {}) {
     ? null
     : await answerDeterministicQuestion(question, { ...options, intent: requestedIntent });
   const intent = options.actionPlan?.intent || prepared?.intent || requestedIntent;
+  const dataRoute = resolveAiDataRoute(intent, {
+    hasActionPlan: Boolean(options.actionPlan),
+    semanticEnabled: Boolean(!prepared && config.ai.indexingEnabled && config.ai.qdrant.url),
+  });
   const hits = prepared || options.actionPlan
     ? []
     : await retrieveWorkspaceHits(question, { ...options, intent, limit: normalizeLimit(options.limit, 6, 12) });
@@ -1541,6 +1546,7 @@ async function createAnswerContext(question, options = {}) {
   ];
   return {
     intent,
+    dataRoute,
     hits,
     sources,
     context: [
@@ -1614,7 +1620,7 @@ export async function searchWorkspace(question, options = {}) {
 }
 
 export async function answerWorkspace(question, options = {}) {
-  const { sources, context, intent, grounded, facts, actionRequests } = await createAnswerContext(question, options);
+  const { sources, context, intent, dataRoute, grounded, facts, actionRequests } = await createAnswerContext(question, options);
 
   const response = await getChatModel().chat({
     messages: buildAnswerMessages(question, context, options.messages, intent, options),
@@ -1625,6 +1631,7 @@ export async function answerWorkspace(question, options = {}) {
     sources,
     grounded,
     intent,
+    dataRoute,
     facts,
     suggestions: [],
     actionRequests,
@@ -1633,7 +1640,7 @@ export async function answerWorkspace(question, options = {}) {
 }
 
 export async function streamAnswerWorkspace(question, options = {}, handlers = {}) {
-  const { sources, context, intent, grounded, facts, actionRequests } = await createAnswerContext(question, options);
+  const { sources, context, intent, dataRoute, grounded, facts, actionRequests } = await createAnswerContext(question, options);
   handlers.onIntent?.(intent);
   handlers.onSources?.(sources);
   handlers.onActionRequests?.(actionRequests);
@@ -1678,6 +1685,7 @@ export async function streamAnswerWorkspace(question, options = {}, handlers = {
     handlers.onDone?.({
       grounded: fallback.grounded,
       intent: fallback.intent,
+      dataRoute: fallback.dataRoute,
       facts: fallback.facts,
       suggestions: fallback.suggestions,
       actionRequests: fallback.actionRequests,
@@ -1690,6 +1698,6 @@ export async function streamAnswerWorkspace(question, options = {}, handlers = {
     answer = emptyModelAnswer;
     handlers.onDelta?.(answer);
   }
-  handlers.onDone?.({ grounded, intent, facts, suggestions: [], actionRequests, generatedByModel: true });
-  return { answer, sources, grounded, intent, facts, suggestions: [], actionRequests, generatedByModel: true };
+  handlers.onDone?.({ grounded, intent, dataRoute, facts, suggestions: [], actionRequests, generatedByModel: true });
+  return { answer, sources, grounded, intent, dataRoute, facts, suggestions: [], actionRequests, generatedByModel: true };
 }
