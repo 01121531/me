@@ -230,6 +230,85 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ reason }),
     }),
+  getWorkspaceFolders: () => request('/v1/folders'),
+  createWorkspaceFolder: (payload) =>
+    request('/v1/folders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateWorkspaceFolder: (id, payload) =>
+    request(`/v1/folders/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteWorkspaceFolder: (id) =>
+    request(`/v1/folders/${id}`, { method: 'DELETE' }),
+  getWorkspaceTags: () => request('/v1/tags'),
+  createWorkspaceTag: (payload) =>
+    request('/v1/tags', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateWorkspaceTag: (id, payload) =>
+    request(`/v1/tags/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteWorkspaceTag: (id) =>
+    request(`/v1/tags/${id}`, { method: 'DELETE' }),
+  getWorkspaceResources: (params = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, value);
+    });
+    const suffix = query.toString() ? `?${query}` : '';
+    return request(`/v1/resources${suffix}`);
+  },
+  getWorkspaceResource: (id) => request(`/v1/resources/${id}`),
+  createWorkspaceResource: (payload) =>
+    request('/v1/resources', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  uploadWorkspaceResources: (files, metadata = {}) => {
+    const formData = new FormData();
+    Array.from(files || []).forEach((file) => formData.append('files', file));
+    Object.entries(metadata).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === '') return;
+      formData.append(key, key === 'tagIds' ? JSON.stringify(value) : String(value));
+    });
+    return request('/v1/resources/upload', { method: 'POST', body: formData });
+  },
+  updateWorkspaceResource: (id, payload) =>
+    request(`/v1/resources/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }),
+  deleteWorkspaceResource: (id, reason = '') =>
+    request(`/v1/resources/${id}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ reason }),
+    }),
+  getWorkspaceResourceVersions: (id) => request(`/v1/resources/${id}/versions`),
+  uploadWorkspaceResourceVersion: (id, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request(`/v1/resources/${id}/versions`, { method: 'POST', body: formData });
+  },
+  addWorkspaceResourceRelation: (id, payload) =>
+    request(`/v1/resources/${id}/relations`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  deleteWorkspaceResourceRelation: (id, relationId) =>
+    request(`/v1/resources/${id}/relations/${relationId}`, { method: 'DELETE' }),
+  reprocessWorkspaceResource: (id) =>
+    request(`/v1/resources/${id}/reprocess`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  searchWorkspaceV1: (query, limit = 30) =>
+    request(`/v1/search?q=${encodeURIComponent(query || '')}&limit=${encodeURIComponent(limit)}`),
   getTasks: (params = {}) => {
     const query = new URLSearchParams();
     Object.entries(params).forEach(([key, value]) => {

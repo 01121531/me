@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise';
 import { config } from './config.js';
+import { runVersionedMigrations } from '../packages/database/src/migrations.js';
 
 let pool;
 
@@ -428,21 +429,6 @@ async function migrate(db) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `);
 
-  await db.query(`
-    ALTER TABLE mcp_action_requests
-    MODIFY COLUMN action_type ENUM(
-      'create_task',
-      'update_task',
-      'create_log',
-      'update_log',
-      'create_note',
-      'update_note',
-      'attach_weixin_media_to_task',
-      'attach_weixin_media_to_note',
-      'create_note_with_weixin_media'
-    ) NOT NULL
-  `);
-
   await db.query("UPDATE tasks SET progress = 0 WHERE status = 'todo' AND progress <> 0");
   await db.query("UPDATE tasks SET progress = 100 WHERE status = 'done' AND progress <> 100");
 
@@ -452,6 +438,8 @@ async function migrate(db) {
   if (!(await hasColumn(db, 'tasks', 'deleted_reason'))) {
     await db.query('ALTER TABLE tasks ADD COLUMN deleted_reason VARCHAR(255) NULL AFTER deleted_at');
   }
+
+  await runVersionedMigrations(db);
 }
 
 async function hasColumn(db, tableName, columnName) {

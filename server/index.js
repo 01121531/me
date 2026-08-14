@@ -99,6 +99,8 @@ import {
   toTags,
   toToday,
 } from './validators.js';
+import { installWorkspaceV1Routes } from '../apps/api/src/modules/resources/routes.js';
+import { syncLegacyWorkspaceData } from '../apps/api/src/modules/resources/legacy-sync.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -907,6 +909,7 @@ installAuthRoutes(app, asyncRoute);
 installMcpServer(app);
 app.use('/api', requireApiAuth);
 app.use('/api', observeApiWrites);
+installWorkspaceV1Routes(app);
 
 const progressForStatus = (status, progress) => {
   if (status === 'todo') return 0;
@@ -1812,14 +1815,15 @@ app.post('/api/tasks/:id/notes', asyncRoute(async (req, res) => {
   const category = toNullableText(req.body.category);
   const title = normalizeNoteTitle(req.body.title, content);
   const contentJson = normalizeContentJson(req.body.contentJson);
+  const aiVisibility = ['inherit', 'allow', 'deny'].includes(req.body.aiVisibility) ? req.body.aiVisibility : 'inherit';
   const attachmentId = req.body.attachmentId ? Number(req.body.attachmentId) : null;
   if (!(await attachmentBelongsToTask(attachmentId, taskId))) {
     return res.status(400).json({ message: '只能引用当前任务下的附件。' });
   }
 
   const [result] = await getPool().query(
-    'INSERT INTO task_notes (task_id, title, attachment_id, category, content, content_json) VALUES (?, ?, ?, ?, ?, ?)',
-    [taskId, title, attachmentId, category ? category.slice(0, 60) : null, content, contentJson],
+    'INSERT INTO task_notes (task_id, title, attachment_id, category, content, content_json, ai_visibility) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [taskId, title, attachmentId, category ? category.slice(0, 60) : null, content, contentJson, aiVisibility],
   );
 
   const [rows] = await getPool().query(`${noteSelectSql} WHERE n.id = ?`, [result.insertId]);
@@ -1866,9 +1870,10 @@ app.post('/api/notes', asyncRoute(async (req, res) => {
   const category = toNullableText(req.body.category);
   const title = normalizeNoteTitle(req.body.title, content);
   const contentJson = normalizeContentJson(req.body.contentJson);
+  const aiVisibility = ['inherit', 'allow', 'deny'].includes(req.body.aiVisibility) ? req.body.aiVisibility : 'inherit';
   const [result] = await getPool().query(
-    'INSERT INTO task_notes (task_id, title, attachment_id, category, content, content_json) VALUES (NULL, ?, NULL, ?, ?, ?)',
-    [title, category ? category.slice(0, 60) : null, content, contentJson],
+    'INSERT INTO task_notes (task_id, title, attachment_id, category, content, content_json, ai_visibility) VALUES (NULL, ?, NULL, ?, ?, ?, ?)',
+    [title, category ? category.slice(0, 60) : null, content, contentJson, aiVisibility],
   );
 
   const [rows] = await getPool().query(`${noteSelectSql} WHERE n.id = ?`, [result.insertId]);
@@ -2082,6 +2087,12 @@ app.patch('/api/notes/:id', asyncRoute(async (req, res) => {
     ? Number(existing.sort_order || 0)
     : Number(req.body.sortOrder || 0);
   const contentJson = normalizeContentJson(req.body.contentJson, existing.content_json);
+  const aiVisibility = req.body.aiVisibility === undefined
+    ? (existing.ai_visibility || 'inherit')
+    : (['inherit', 'allow', 'deny'].includes(req.body.aiVisibility) ? req.body.aiVisibility : null);
+  if (!aiVisibility) {
+    return res.status(400).json({ message: 'AI 可见性设置无效。' });
+  }
   const changeSource = normalizeNoteVersionSource(req.body.changeSource);
   const changeNote = req.body.changeNote || (changeSource === 'ai_format' ? 'AI 整理' : '');
 
@@ -2090,8 +2101,8 @@ app.patch('/api/notes/:id', asyncRoute(async (req, res) => {
   try {
     await connection.beginTransaction();
     await connection.query(
-      'UPDATE task_notes SET task_id = ?, title = ?, category = ?, content = ?, content_json = ?, attachment_id = ?, sort_order = ? WHERE id = ?',
-      [taskId, title, category ? category.slice(0, 60) : null, content, contentJson, attachmentId, sortOrder, noteId],
+      'UPDATE task_notes SET task_id = ?, title = ?, category = ?, content = ?, content_json = ?, attachment_id = ?, sort_order = ?, ai_visibility = ? WHERE id = ?',
+      [taskId, title, category ? category.slice(0, 60) : null, content, contentJson, attachmentId, sortOrder, aiVisibility, noteId],
     );
     const [updatedRows] = await connection.query('SELECT * FROM task_notes WHERE id = ? AND deleted_at IS NULL', [noteId]);
     await createNoteVersion(connection, noteId, existing, updatedRows[0], changeSource, changeNote);
@@ -3408,6 +3419,10 @@ ensureDatabase()
     await initializeAuth();
     await initializeStorage();
     await repairAttachmentFileNames();
+    const workspaceSync = await syncLegacyWorkspaceData();
+    if (workspaceSync.resourcesCreated) {
+      console.log(`Unified resource library imported ${workspaceSync.resourcesCreated} legacy attachments.`);
+    }
     await initializeWeixinService();
     app.listen(config.port, () => {
       console.log(`API server ready at http://127.0.0.1:${config.port}`);

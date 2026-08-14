@@ -4,6 +4,7 @@ import { getPool } from '../db.js';
 import { readStoredAttachment } from '../storage.js';
 import { extractAndCacheAttachmentText, getAttachmentTextCache } from './attachment-cache.js';
 import { extractAttachmentText } from './attachment-text.js';
+import { redactSensitiveText } from '../../packages/domain/src/redaction.js';
 
 function cleanText(value) {
   return String(value || '').replace(/\s+/g, ' ').trim();
@@ -97,7 +98,9 @@ export async function loadIndexDocument(entityType, entityId) {
         SELECT n.*, t.title AS task_title
         FROM task_notes n
         LEFT JOIN tasks t ON t.id = n.task_id
-        WHERE n.id = ? AND n.deleted_at IS NULL AND (n.task_id IS NULL OR t.deleted_at IS NULL)
+        WHERE n.id = ? AND n.deleted_at IS NULL
+          AND COALESCE(n.ai_visibility, 'inherit') <> 'deny'
+          AND (n.task_id IS NULL OR t.deleted_at IS NULL)
       `,
       [entityId],
     );
@@ -107,6 +110,59 @@ export async function loadIndexDocument(entityType, entityId) {
       taskId: row.task_id ? Number(row.task_id) : null,
       category: row.category || null,
       updatedAt: row.updated_at,
+    });
+  }
+
+  if (entityType === 'resource') {
+    const [rows] = await db.query(
+      `
+        SELECT
+          r.*,
+          v.id AS version_id,
+          v.original_name,
+          v.mime_type,
+          v.storage_key,
+          v.source_url,
+          c.extracted_text,
+          c.summary,
+          GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ', ') AS tag_names,
+          MIN(CASE WHEN rr.target_type = 'task' THEN rr.target_id END) AS task_id
+        FROM resources r
+        LEFT JOIN resource_versions v
+          ON v.resource_id = r.id
+         AND v.version_no = (SELECT MAX(latest.version_no) FROM resource_versions latest WHERE latest.resource_id = r.id)
+        LEFT JOIN resource_contents c ON c.version_id = v.id
+        LEFT JOIN resource_tags rt ON rt.resource_id = r.id
+        LEFT JOIN tags t ON t.id = rt.tag_id AND t.deleted_at IS NULL
+        LEFT JOIN resource_relations rr ON rr.resource_id = r.id
+        WHERE r.id = ? AND r.deleted_at IS NULL AND r.ai_visibility <> 'deny'
+        GROUP BY r.id, v.id, c.version_id
+      `,
+      [entityId],
+    );
+    const row = rows[0];
+    if (!row) return null;
+    const text = redactSensitiveText([
+      `资料：${row.title}`,
+      row.description ? `说明：${row.description}` : '',
+      row.tag_names ? `标签：${row.tag_names}` : '',
+      row.source_url ? `来源：${row.source_url}` : '',
+      row.summary ? `摘要：${row.summary}` : '',
+      row.extracted_text ? `内容：${row.extracted_text}` : '',
+    ].filter(Boolean).join('\n'));
+    return toDocument('resource', row, text, {
+      title: row.title,
+      taskId: row.task_id ? Number(row.task_id) : null,
+      resourceId: Number(row.id),
+      resourcePublicId: row.public_id,
+      kind: row.kind,
+      fileName: row.original_name || null,
+      mimeType: row.mime_type || null,
+      sourceUrl: row.source_url || null,
+      downloadUrl: row.storage_key
+        ? `/api/v1/resources/${row.public_id}/versions/${row.version_id}/download`
+        : null,
+      tags: row.tag_names ? row.tag_names.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
     });
   }
 

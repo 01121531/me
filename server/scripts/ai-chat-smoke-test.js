@@ -159,7 +159,8 @@ try {
   assert.equal(inventory.dataRoute.provider, 'mysql');
   assert.ok(inventory.sources.some((source) => source.entityType === 'task_attachment' && Number(source.entityId) === taskAttachmentId));
   assert.ok(inventory.sources.some((source) => source.entityType === 'note_attachment' && Number(source.entityId) === noteAttachmentId));
-  assert.ok(inventory.sources.every((source) => source.entityType.endsWith('_attachment')));
+  assert.ok(inventory.sources.every((source) => source.entityType.endsWith('_attachment') || source.entityType === 'resource'));
+  assert.ok(!inventory.sources.some((source) => source.entityType === 'note'));
 
   const pdfReply = await answerWorkspace('你给我发一个 PDF');
   assert.ok(pdfReply.sources.some((source) => Number(source.entityId) === taskAttachmentId));

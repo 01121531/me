@@ -30,6 +30,7 @@ import { CSS } from '@dnd-kit/utilities';
 import {
   AlertTriangle,
   BarChart3,
+  Bot,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -54,6 +55,7 @@ import {
   Unplug,
   Info,
   LayoutDashboard,
+  LibraryBig,
   ListFilter,
   Moon,
   Plus,
@@ -63,6 +65,7 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  ShieldOff,
   Sparkles,
   Square,
   Sun,
@@ -70,6 +73,7 @@ import {
   X,
 } from 'lucide-react';
 import { api } from './api.js';
+import ResourceLibraryView from './features/resources/ResourceLibraryView.jsx';
 
 const columns = [
   { status: 'todo', title: '待办', icon: ClipboardList },
@@ -552,6 +556,7 @@ function normalizeDraftForm(draft) {
     content: String(draft?.content || extractPlainTextFromDoc(contentJson)),
     contentJson,
     attachmentId: draft?.attachmentId ? String(draft.attachmentId) : '',
+    aiVisibility: ['inherit', 'allow', 'deny'].includes(draft?.aiVisibility) ? draft.aiVisibility : 'inherit',
   };
 }
 
@@ -868,6 +873,7 @@ function TaskBoardApp() {
   const [standaloneNotesLoading, setStandaloneNotesLoading] = useState(false);
   const [availableNoteCategories, setAvailableNoteCategories] = useState([]);
   const [noteFocusRequest, setNoteFocusRequest] = useState(null);
+  const [resourceFocusRequest, setResourceFocusRequest] = useState(null);
 
   const dragSnapshotRef = useRef([]);
   const dragCurrentRef = useRef([]);
@@ -1219,6 +1225,14 @@ function TaskBoardApp() {
   }
 
   function openAiSource(source) {
+    if (source?.entityType === 'resource') {
+      setResourceFocusRequest({
+        id: source.publicId || source.resourcePublicId || source.resourceId || source.entityId,
+        nonce: Date.now(),
+      });
+      setView('resources');
+      return;
+    }
     const noteTargetId = source?.noteId || (source?.entityType === 'note' ? source.entityId : null);
     if (noteTargetId) {
       openNotesAt(noteTargetId, { includeLinked: true });
@@ -1254,6 +1268,7 @@ function TaskBoardApp() {
       await loadTasks();
       await loadStandaloneNotes();
       await loadNoteCategories();
+      setWorkspaceRevision((current) => current + 1);
     } catch (err) {
       addToast('error', '出错了', err.message);
     }
@@ -1316,6 +1331,14 @@ function TaskBoardApp() {
           >
             <FileText size={18} />
             <span>笔记</span>
+          </button>
+          <button
+            className={view === 'resources' ? 'icon-button active' : 'icon-button'}
+            onClick={() => setView('resources')}
+            title="统一资料库"
+          >
+            <LibraryBig size={18} />
+            <span>资料库</span>
           </button>
           <button
             className={view === 'attachments' ? 'icon-button active' : 'icon-button'}
@@ -1431,6 +1454,16 @@ function TaskBoardApp() {
           />
         ) : view === 'ai' ? (
           <AiWorkspaceView onOpenSource={openAiSource} />
+        ) : view === 'resources' ? (
+          <ResourceLibraryView
+            tasks={tasks}
+            addToast={addToast}
+            askConfirm={askConfirm}
+            onOpenTask={openTask}
+            onOpenNotes={openNotesAt}
+            focusRequest={resourceFocusRequest}
+            workspaceRevision={workspaceRevision}
+          />
         ) : view === 'attachments' ? (
           <AttachmentCenterView
             tasks={tasks}
@@ -2726,9 +2759,17 @@ const actionTypeLabels = {
   update_log: '编辑日志',
   create_note: '新增笔记',
   update_note: '编辑笔记',
+  create_resource: '创建资料',
+  update_resource: '更新资料',
   attach_weixin_media_to_task: '保存微信附件到任务',
   attach_weixin_media_to_note: '保存微信附件到笔记',
   create_note_with_weixin_media: '保存微信附件为笔记',
+};
+
+const resourceKindLabels = {
+  file: '文件',
+  link: '链接',
+  text: '文本',
 };
 
 function tagsToText(tags) {
@@ -2781,6 +2822,19 @@ function ActionPayloadSummary({ action }) {
       ['标题', payload.title],
       ['分类', payload.category],
       ['笔记内容', payload.content],
+      ['来源说明', payload.sourceReason],
+    );
+  } else if (action.actionType === 'create_resource' || action.actionType === 'update_resource') {
+    rows.push(
+      ['资料 ID', payload.resourceId],
+      ['资料类型', resourceKindLabels[payload.kind] || payload.kind],
+      ['标题', payload.title],
+      ['说明', payload.description],
+      ['网址', payload.sourceUrl || payload.url],
+      ['目录 ID', payload.folderId],
+      ['标签 ID', Array.isArray(payload.tagIds) ? payload.tagIds.join('、') : ''],
+      ['AI 可见性', payload.aiVisibility === 'deny' ? '禁止 AI 使用' : payload.aiVisibility ? '允许 AI 使用' : ''],
+      ['正文', payload.content],
       ['来源说明', payload.sourceReason],
     );
   } else if (action.actionType === 'attach_weixin_media_to_task') {
@@ -5664,6 +5718,7 @@ function NoteForm({
     content: '',
     contentJson: emptyRichDoc,
     attachmentId: '',
+    aiVisibility: 'inherit',
   });
   const [saving, setSaving] = useState(false);
   const [pendingFiles, setPendingFiles] = useState([]);
@@ -5704,6 +5759,7 @@ function NoteForm({
           content: note.content || '',
           contentJson: noteToRichDoc(note),
           attachmentId: note.attachmentId ? String(note.attachmentId) : '',
+          aiVisibility: note.aiVisibility || 'inherit',
         }
       : {
           title: '',
@@ -5711,6 +5767,7 @@ function NoteForm({
           content: '',
           contentJson: emptyRichDoc,
           attachmentId: '',
+          aiVisibility: 'inherit',
         };
 
     let restoredForm = initialForm;
@@ -5931,6 +5988,7 @@ function NoteForm({
         content: form.content,
         contentJson: baseContentJson,
         attachmentId: form.attachmentId ? Number(form.attachmentId) : null,
+        aiVisibility: form.aiVisibility,
       };
       if (note && appliedAiFormat) {
         payload.changeSource = 'ai_format';
@@ -5973,7 +6031,7 @@ function NoteForm({
         // The saved server record is authoritative even when browser storage is unavailable.
       }
       setDraftStatus('笔记已保存');
-      setForm({ title: '', category: '', content: '', contentJson: emptyRichDoc, attachmentId: '' });
+      setForm({ title: '', category: '', content: '', contentJson: emptyRichDoc, attachmentId: '', aiVisibility: 'inherit' });
       await onSaved();
     } catch (err) {
       addToast('error', '出错了', err.message);
@@ -6104,6 +6162,20 @@ function NoteForm({
           </div>
         )}
       </div>
+      <label className="note-ai-visibility-control">
+        <input
+          type="checkbox"
+          checked={form.aiVisibility === 'deny'}
+          onChange={(event) => setForm({ ...form, aiVisibility: event.target.checked ? 'deny' : 'inherit' })}
+        />
+        <span className="note-ai-visibility-icon">
+          {form.aiVisibility === 'deny' ? <ShieldOff size={16} /> : <Bot size={16} />}
+        </span>
+        <span>
+          <strong>{form.aiVisibility === 'deny' ? '禁止 AI 使用此笔记' : '允许 AI 检索此笔记'}</strong>
+          <small>{form.aiVisibility === 'deny' ? '正文和附件不会发送给云模型，也不会进入 AI 检索结果。' : '发送云模型前仍会自动遮盖密码、Token 和身份证等敏感信息。'}</small>
+        </span>
+      </label>
       <div className="note-editor-field">
         <span>笔记内容</span>
         <RichNoteEditor

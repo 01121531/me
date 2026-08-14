@@ -7,6 +7,7 @@ const entityTypeByTarget = {
   'log-attachments': 'log_attachment',
   'note-attachments': 'note_attachment',
   'task-attachments': 'task_attachment',
+  resources: 'resource',
 };
 
 function normalizeTarget(targetType, targetId) {

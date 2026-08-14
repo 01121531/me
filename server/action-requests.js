@@ -14,6 +14,7 @@ import {
   temporaryMediaPath,
 } from './weixin/temp-media.js';
 import crypto from 'crypto';
+import { queueResourceProcessing } from '../apps/worker/src/resource-processing.js';
 import {
   mapLog,
   mapNote,
@@ -40,6 +41,8 @@ const ACTION_TYPES = new Set([
   'attach_weixin_media_to_task',
   'attach_weixin_media_to_note',
   'create_note_with_weixin_media',
+  'create_resource',
+  'update_resource',
 ]);
 const REQUEST_STATUSES = new Set(['pending', 'applied', 'rejected', 'failed']);
 
@@ -127,6 +130,8 @@ function actionTitle(actionType, payload = {}) {
   if (actionType === 'attach_weixin_media_to_task') return `保存微信附件到任务 #${payload.taskId}`;
   if (actionType === 'attach_weixin_media_to_note') return `保存微信附件到笔记 #${payload.noteId}`;
   if (actionType === 'create_note_with_weixin_media') return `将微信附件保存为笔记：${payload.title || '未命名笔记'}`;
+  if (actionType === 'create_resource') return `创建资料：${payload.title || '未命名资料'}`;
+  if (actionType === 'update_resource') return `更新资料 #${payload.resourceId}`;
   return actionType;
 }
 
@@ -139,6 +144,8 @@ function targetForAction(actionType, payload = {}) {
   if (actionType === 'attach_weixin_media_to_task') return { targetType: 'tasks', targetId: payload.taskId };
   if (actionType === 'attach_weixin_media_to_note') return { targetType: 'notes', targetId: payload.noteId };
   if (actionType === 'create_note_with_weixin_media') return { targetType: 'notes', targetId: null };
+  if (actionType === 'update_resource') return { targetType: 'resources', targetId: payload.resourceId };
+  if (actionType === 'create_resource') return { targetType: 'resources', targetId: null };
   return { targetType: actionType === 'create_task' ? 'tasks' : null, targetId: null };
 }
 
@@ -548,6 +555,105 @@ async function createNoteWithWeixinMedia(connection, payload) {
   };
 }
 
+async function ensureResourceTags(connection, workspaceId, values) {
+  const ids = [...new Set((Array.isArray(values) ? values : []).map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!ids.length) return [];
+  const [rows] = await connection.query(
+    `SELECT id FROM tags WHERE workspace_id = ? AND deleted_at IS NULL AND id IN (${ids.map(() => '?').join(',')})`,
+    [workspaceId, ...ids],
+  );
+  if (rows.length !== ids.length) throw new Error('资料只能使用已经存在的标签。');
+  return ids;
+}
+
+async function createResourceAction(connection, payload) {
+  const kind = ['link', 'text'].includes(payload.kind) ? payload.kind : null;
+  if (!kind) throw new Error('AI 目前只能创建链接或文本资料。');
+  const title = toNullableText(payload.title)?.slice(0, 255);
+  if (!title) throw new Error('资料标题不能为空。');
+  const [[workspace]] = await connection.query('SELECT id FROM workspaces WHERE is_default = 1 ORDER BY id LIMIT 1');
+  if (!workspace) throw new Error('默认工作区不存在。');
+  const folderId = payload.folderId ? normalizePositiveId(payload.folderId, 'folderId') : null;
+  if (folderId) {
+    const [[folder]] = await connection.query('SELECT id FROM folders WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL', [folderId, workspace.id]);
+    if (!folder) throw new Error('资料目录不存在。');
+  }
+  const tagIds = await ensureResourceTags(connection, workspace.id, payload.tagIds);
+  const content = kind === 'text' ? toNullableText(payload.content) : null;
+  const sourceUrl = kind === 'link' ? toNullableText(payload.sourceUrl || payload.url) : null;
+  if (kind === 'text' && !content) throw new Error('文本资料内容不能为空。');
+  if (kind === 'link' && !sourceUrl) throw new Error('链接资料网址不能为空。');
+  const [resourceResult] = await connection.query(
+    `INSERT INTO resources
+      (public_id, workspace_id, folder_id, kind, title, description, status, ai_visibility)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [crypto.randomUUID(), workspace.id, folderId, kind, title, toNullableText(payload.description), kind === 'text' ? 'ready' : 'processing', payload.aiVisibility === 'deny' ? 'deny' : 'inherit'],
+  );
+  const resourceId = Number(resourceResult.insertId);
+  const [versionResult] = await connection.query(
+    'INSERT INTO resource_versions (public_id, resource_id, version_no, source_url) VALUES (?, ?, 1, ?)',
+    [crypto.randomUUID(), resourceId, sourceUrl],
+  );
+  const versionId = Number(versionResult.insertId);
+  await connection.query(
+    `INSERT INTO resource_contents (version_id, status, parser, extracted_text, summary, text_chars, content_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [versionId, kind === 'text' ? 'completed' : 'pending', kind === 'text' ? 'text' : null,
+      content, content?.replace(/\s+/g, ' ').slice(0, 360) || null, content?.length || 0,
+      content ? crypto.createHash('sha256').update(content).digest('hex') : null],
+  );
+  for (const tagId of tagIds) {
+    await connection.query("INSERT INTO resource_tags (resource_id, tag_id, source) VALUES (?, ?, 'manual')", [resourceId, tagId]);
+  }
+  return {
+    result: { id: resourceId, title, kind, status: kind === 'text' ? 'ready' : 'processing' },
+    affected: { targetType: 'resources', targetId: resourceId, operation: 'upsert', processVersionId: kind === 'link' ? versionId : null },
+  };
+}
+
+async function updateResourceAction(connection, payload) {
+  const resourceId = normalizePositiveId(payload.resourceId, 'resourceId');
+  const [[resource]] = await connection.query('SELECT * FROM resources WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [resourceId]);
+  if (!resource) throw new Error('资料不存在。');
+  const folderId = payload.folderId === undefined ? resource.folder_id : (payload.folderId ? normalizePositiveId(payload.folderId, 'folderId') : null);
+  if (folderId) {
+    const [[folder]] = await connection.query('SELECT id FROM folders WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL', [folderId, resource.workspace_id]);
+    if (!folder) throw new Error('资料目录不存在。');
+  }
+  const tagIds = payload.tagIds === undefined ? null : await ensureResourceTags(connection, resource.workspace_id, payload.tagIds);
+  await connection.query(
+    'UPDATE resources SET title = ?, description = ?, folder_id = ?, ai_visibility = ? WHERE id = ?',
+    [payload.title === undefined ? resource.title : String(payload.title).trim().slice(0, 255),
+      payload.description === undefined ? resource.description : toNullableText(payload.description), folderId,
+      ['inherit', 'allow', 'deny'].includes(payload.aiVisibility) ? payload.aiVisibility : resource.ai_visibility, resourceId],
+  );
+  if (tagIds) {
+    await connection.query('DELETE FROM resource_tags WHERE resource_id = ?', [resourceId]);
+    for (const tagId of tagIds) {
+      await connection.query("INSERT INTO resource_tags (resource_id, tag_id, source) VALUES (?, ?, 'manual')", [resourceId, tagId]);
+    }
+  }
+  if (payload.relation?.targetType && payload.relation?.targetId) {
+    const targetType = ['task', 'log', 'note'].includes(payload.relation.targetType) ? payload.relation.targetType : null;
+    if (!targetType) throw new Error('资料关联类型无效。');
+    const targetTable = { task: 'tasks', log: 'work_logs', note: 'task_notes' }[targetType];
+    const targetId = normalizePositiveId(payload.relation.targetId, 'targetId');
+    const [[target]] = await connection.query(
+      `SELECT id FROM ${targetTable} WHERE id = ? AND deleted_at IS NULL`,
+      [targetId],
+    );
+    if (!target) throw new Error('要关联的对象不存在。');
+    await connection.query(
+      `INSERT IGNORE INTO resource_relations (resource_id, target_type, target_id, relation_type) VALUES (?, ?, ?, 'reference')`,
+      [resourceId, targetType, targetId],
+    );
+  }
+  return {
+    result: { id: resourceId, title: payload.title || resource.title },
+    affected: { targetType: 'resources', targetId: resourceId, operation: 'upsert' },
+  };
+}
+
 async function applyAction(connection, action) {
   const payload = parseJsonField(action.payload) || {};
   if (action.action_type === 'create_task') return createTask(connection, payload);
@@ -559,6 +665,8 @@ async function applyAction(connection, action) {
   if (action.action_type === 'attach_weixin_media_to_task') return attachWeixinMediaToTask(connection, payload);
   if (action.action_type === 'attach_weixin_media_to_note') return attachWeixinMediaToNote(connection, payload);
   if (action.action_type === 'create_note_with_weixin_media') return createNoteWithWeixinMedia(connection, payload);
+  if (action.action_type === 'create_resource') return createResourceAction(connection, payload);
+  if (action.action_type === 'update_resource') return updateResourceAction(connection, payload);
   throw new Error(`Unsupported action type: ${action.action_type}`);
 }
 
@@ -622,6 +730,11 @@ export async function approveActionRequest(id, { decidedBy = 'local' } = {}) {
           .catch((error) => {
             console.error(`Failed to queue approved attachment ${attachmentKind}:${item.targetId}:`, error.message);
           });
+      }
+      if (item.processVersionId) {
+        queueResourceProcessing(item.targetId, item.processVersionId).catch((error) => {
+          console.error(`Failed to queue approved resource ${item.targetId}:`, error.message);
+        });
       }
     }
   }

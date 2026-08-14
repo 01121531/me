@@ -4,6 +4,7 @@ import { getPool } from '../db.js';
 import { resolveAiDataRoute } from '../analytics-readiness.js';
 import { toNullableText } from '../validators.js';
 import { retrieveRelevantNodes } from './vector-store.js';
+import { redactSensitiveText } from '../../packages/domain/src/redaction.js';
 
 let chatModel;
 let chatModelSignature = '';
@@ -27,7 +28,7 @@ const workspaceAssistantPrompt = [
 
 const emptyModelAnswer = '<p>模型没有返回可用答案。</p>';
 const taskSourceTypes = new Set(['task', 'log', 'task_attachment', 'log_attachment']);
-const noteSourceTypes = new Set(['note', 'note_attachment']);
+const noteSourceTypes = new Set(['note', 'note_attachment', 'resource']);
 const genericQueryPhrases = [
   'incomplete tasks',
   'unfinished tasks',
@@ -384,6 +385,7 @@ function sourceLabel(metadata, entityType, entityId) {
   if (entityType === 'task') return title || `任务 #${entityId}`;
   if (entityType === 'log') return title ? `${title} 的工作日志` : `工作日志 #${entityId}`;
   if (entityType === 'note') return title || `笔记 #${entityId}`;
+  if (entityType === 'resource') return title || `资料 #${entityId}`;
   if (entityType.endsWith('_attachment')) return `${title || '附件'}：${metadata.fileName || `附件 #${entityId}`}`;
   return `${entityType} #${entityId}`;
 }
@@ -403,6 +405,8 @@ function toSource(hit) {
       : entityType === 'note_attachment' && metadata.ownerId
         ? Number(metadata.ownerId)
         : null,
+    resourceId: entityType === 'resource' ? Number(entityId) : null,
+    resourcePublicId: metadata.resourcePublicId || null,
     label: sourceLabel(metadata, entityType, entityId),
     excerpt: hit.text.slice(0, 360),
     score: Math.round(Number(hit.score || 0) * 1000) / 1000,
@@ -416,6 +420,15 @@ function toSource(hit) {
     mimeType: metadata.mimeType || null,
     isImage: Boolean(metadata.isImage),
     copyText: metadata.copyText || metadata.fileName || hit.text.slice(0, 360),
+  };
+}
+
+function redactSource(source) {
+  return {
+    ...source,
+    label: redactSensitiveText(source?.label || ''),
+    excerpt: redactSensitiveText(source?.excerpt || ''),
+    copyText: redactSensitiveText(source?.copyText || ''),
   };
 }
 
@@ -517,6 +530,48 @@ function noteNode(row, score = 0.4) {
       title: row.title,
       category: row.category,
       searchMode: 'keyword',
+    },
+  };
+}
+
+function resourceNode(row, score = 0.74) {
+  const isImage = isImageMimeType(row.mime_type);
+  const base = row.public_id && row.version_public_id
+    ? `/api/v1/resources/${row.public_id}/versions/${row.version_public_id}`
+    : null;
+  return {
+    id: `resource:${row.id}`,
+    score,
+    text: redactSensitiveText(cleanText([
+      `资料：${row.title}`,
+      row.description ? `说明：${row.description}` : '',
+      row.tag_names ? `标签：${row.tag_names}` : '',
+      row.source_url ? `来源：${row.source_url}` : '',
+      row.summary ? `摘要：${row.summary}` : '',
+      row.extracted_text ? `内容：${row.extracted_text}` : '',
+    ].filter(Boolean).join('\n'))),
+    metadata: {
+      documentId: `resource:${row.id}`,
+      entityType: 'resource',
+      entityId: String(row.id),
+      resourcePublicId: row.public_id,
+      taskId: row.task_id ? Number(row.task_id) : null,
+      title: row.title,
+      kind: row.kind,
+      fileName: row.original_name || null,
+      mimeType: row.mime_type || null,
+      isImage,
+      sourceUrl: row.source_url || null,
+      links: row.source_url ? [row.source_url] : [],
+      previewUrl: row.storage_key && base ? `${base}/preview` : null,
+      downloadUrl: row.storage_key && base ? `${base}/download` : null,
+      copyText: row.original_name || row.title,
+      searchMode: 'keyword',
+      createdAt: row.created_at || null,
+      textStatus: row.content_status || null,
+      parser: row.parser || null,
+      textChars: Number(row.text_chars || 0),
+      textError: row.error_message || '',
     },
   };
 }
@@ -631,7 +686,8 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
       SELECT n.*, t.title AS task_title
       FROM task_notes n
       LEFT JOIN tasks t ON t.id = n.task_id
-      WHERE n.deleted_at IS NULL AND (n.task_id IS NULL OR t.deleted_at IS NULL) AND ${noteLike.sql} ${noteTaskFilter}
+      WHERE n.deleted_at IS NULL AND COALESCE(n.ai_visibility, 'inherit') <> 'deny'
+        AND (n.task_id IS NULL OR t.deleted_at IS NULL) AND ${noteLike.sql} ${noteTaskFilter}
       ORDER BY n.updated_at DESC, n.id DESC
       LIMIT ?
     `,
@@ -727,7 +783,9 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
       LEFT JOIN tasks t ON t.id = n.task_id
       LEFT JOIN attachment_text_cache c
         ON c.attachment_kind = 'note' AND c.attachment_id = a.id
-      WHERE a.deleted_at IS NULL AND n.deleted_at IS NULL AND (n.task_id IS NULL OR t.deleted_at IS NULL) AND ${noteAttachmentLike.sql} ${noteAttachmentTaskFilter}
+      WHERE a.deleted_at IS NULL AND n.deleted_at IS NULL
+        AND COALESCE(n.ai_visibility, 'inherit') <> 'deny'
+        AND (n.task_id IS NULL OR t.deleted_at IS NULL) AND ${noteAttachmentLike.sql} ${noteAttachmentTaskFilter}
       ORDER BY a.created_at DESC, a.id DESC
       LIMIT ?
     `,
@@ -745,7 +803,46 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     0.7,
   )));
 
-  return hits.slice(0, normalizedLimit);
+  const resourceLike = likeClause(['r.title', 'r.description', 'c.extracted_text', 't.name'], terms);
+  const resourceParams = [...resourceLike.params];
+  const resourceTaskFilter = normalizedTaskId
+    ? "AND EXISTS (SELECT 1 FROM resource_relations task_relation WHERE task_relation.resource_id = r.id AND task_relation.target_type = 'task' AND task_relation.target_id = ?)"
+    : '';
+  if (normalizedTaskId) resourceParams.push(normalizedTaskId);
+  const [resourceRows] = await getPool().query(
+    `
+      SELECT r.*, v.public_id AS version_public_id, v.original_name, v.mime_type, v.storage_key,
+        v.source_url, c.status AS content_status, c.parser, c.extracted_text, c.summary,
+        c.text_chars, c.error_message,
+        GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ', ') AS tag_names,
+        MIN(CASE WHEN rr.target_type = 'task' THEN rr.target_id END) AS task_id
+      FROM resources r
+      LEFT JOIN resource_versions v
+        ON v.resource_id = r.id
+       AND v.version_no = (SELECT MAX(latest.version_no) FROM resource_versions latest WHERE latest.resource_id = r.id)
+      LEFT JOIN resource_contents c ON c.version_id = v.id
+      LEFT JOIN resource_tags rt ON rt.resource_id = r.id
+      LEFT JOIN tags t ON t.id = rt.tag_id AND t.deleted_at IS NULL
+      LEFT JOIN resource_relations rr ON rr.resource_id = r.id
+      WHERE r.deleted_at IS NULL AND r.ai_visibility <> 'deny' AND ${resourceLike.sql} ${resourceTaskFilter}
+      GROUP BY r.id, v.id, c.version_id
+      ORDER BY r.updated_at DESC, r.id DESC
+      LIMIT ?
+    `,
+    [...resourceParams, normalizedLimit],
+  );
+  hits.push(...resourceRows.map((row) => withMatchedFields(
+    resourceNode(row),
+    matchedFieldsFor(terms, {
+      '资料标题': row.title,
+      '资料说明': row.description,
+      '资料正文': row.extracted_text,
+      '资料标签': row.tag_names,
+    }),
+    0.76,
+  )));
+
+  return hits.sort((left, right) => Number(right.score || 0) - Number(left.score || 0)).slice(0, normalizedLimit);
 }
 
 async function recentHits({ taskId = null, limit = 8 } = {}) {
@@ -1263,6 +1360,11 @@ async function attachmentInventoryHits(question, options = {}) {
   const logFilter = taskId ? 'AND l.task_id = ?' : '';
   const noteFilter = taskId ? 'AND n.task_id = ?' : '';
   const rowLimit = Math.max(limit, 20);
+  const resourceTypeFilter = /pdf/i.test(String(question || ''))
+    ? "AND (LOWER(v.mime_type) = 'application/pdf' OR LOWER(v.original_name) LIKE '%.pdf')"
+    : /图片|图像|截图|照片/.test(String(question || ''))
+      ? "AND v.mime_type LIKE 'image/%'"
+      : '';
 
   const [taskRows, logRows, noteRows] = await Promise.all([
     getPool().query(
@@ -1316,7 +1418,35 @@ async function attachmentInventoryHits(question, options = {}) {
     ).then(([rows]) => rows.map((row) => attachmentNode(row, 'note_attachment', 'note_id', 0.84))),
   ]);
 
-  return [...taskRows, ...logRows, ...noteRows]
+  const resourceParams = taskId ? [taskId, rowLimit] : [rowLimit];
+  const resourceTaskFilter = taskId
+    ? "AND EXISTS (SELECT 1 FROM resource_relations filter_relation WHERE filter_relation.resource_id = r.id AND filter_relation.target_type = 'task' AND filter_relation.target_id = ?)"
+    : '';
+  const [resourceRows] = await getPool().query(
+    `
+      SELECT r.*, v.public_id AS version_public_id, v.original_name, v.mime_type, v.storage_key,
+        v.source_url, c.status AS content_status, c.parser, c.extracted_text, c.summary,
+        c.text_chars, c.error_message,
+        GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ', ') AS tag_names,
+        MIN(CASE WHEN rr.target_type = 'task' THEN rr.target_id END) AS task_id
+      FROM resources r
+      LEFT JOIN resource_versions v
+        ON v.resource_id = r.id
+       AND v.version_no = (SELECT MAX(latest.version_no) FROM resource_versions latest WHERE latest.resource_id = r.id)
+      LEFT JOIN resource_contents c ON c.version_id = v.id
+      LEFT JOIN resource_tags rt ON rt.resource_id = r.id
+      LEFT JOIN tags t ON t.id = rt.tag_id AND t.deleted_at IS NULL
+      LEFT JOIN resource_relations rr ON rr.resource_id = r.id
+      WHERE r.deleted_at IS NULL AND r.ai_visibility <> 'deny'
+        ${resourceTypeFilter} ${resourceTaskFilter}
+      GROUP BY r.id, v.id, c.version_id
+      ORDER BY r.updated_at DESC, r.id DESC
+      LIMIT ?
+    `,
+    resourceParams,
+  );
+
+  return [...resourceRows.map((row) => resourceNode(row, 0.9)), ...taskRows, ...logRows, ...noteRows]
     .sort((left, right) => String(right.metadata.createdAt || '').localeCompare(String(left.metadata.createdAt || '')))
     .slice(0, limit)
     .map((hit) => withSourceReason(
@@ -1344,7 +1474,7 @@ async function answerAttachmentQuestion(question, options = {}) {
   let hits = inventoryQuestion
     ? await attachmentInventoryHits(question, { ...options, limit: 30 })
     : (await keywordHits(question, { ...options, limit: 12 }))
-      .filter((hit) => hitEntityType(hit).endsWith('_attachment'));
+      .filter((hit) => hitEntityType(hit).endsWith('_attachment') || hitEntityType(hit) === 'resource');
   if (!hits.length) return emptyAttachmentAnswer(question);
   const relevantHits = dedupeHits(hits).slice(0, 30).map((hit) => withSourceReason(
     hit,
@@ -1414,6 +1544,7 @@ function defaultSourceReason(entityType) {
   if (entityType === 'log_attachment') return '日志附件匹配';
   if (entityType === 'note') return '笔记匹配';
   if (entityType === 'note_attachment') return '笔记附件匹配';
+  if (entityType === 'resource') return '资料库内容匹配';
   return '相关资料';
 }
 
@@ -1514,13 +1645,21 @@ async function createAnswerContext(question, options = {}) {
     hasActionPlan: Boolean(options.actionPlan),
     semanticEnabled: Boolean(!prepared && config.ai.indexingEnabled && config.ai.qdrant.url),
   });
-  const hits = prepared || options.actionPlan
+  const rawHits = prepared || options.actionPlan
     ? []
     : await retrieveWorkspaceHits(question, { ...options, intent, limit: normalizeLimit(options.limit, 6, 12) });
-  const additionalContext = String(options.additionalContext || '').trim();
-  const preparedSources = prepared?.sources || [];
+  const hits = rawHits.map((hit) => ({
+    ...hit,
+    text: redactSensitiveText(hit.text),
+    metadata: {
+      ...(hit.metadata || {}),
+      copyText: redactSensitiveText(hit.metadata?.copyText || ''),
+    },
+  }));
+  const additionalContext = redactSensitiveText(String(options.additionalContext || '').trim());
+  const preparedSources = (prepared?.sources || []).map(redactSource);
   const hitSources = hits.map(toSource);
-  const actionSources = options.actionPlan?.sources || [];
+  const actionSources = (options.actionPlan?.sources || []).map(redactSource);
   const sources = mergeSources(preparedSources, hitSources, actionSources);
   const databaseContext = prepared
     ? [
@@ -1549,12 +1688,12 @@ async function createAnswerContext(question, options = {}) {
     dataRoute,
     hits,
     sources,
-    context: [
+    context: redactSensitiveText([
       databaseContext,
       additionalContext ? `[微信临时资料]\n${additionalContext.slice(0, 12000)}` : '',
       actionSourceContext,
       actionContext,
-    ].filter(Boolean).join('\n\n'),
+    ].filter(Boolean).join('\n\n')),
     grounded: Boolean(prepared?.grounded || hits.length || additionalContext || options.actionPlan?.grounded),
     facts,
     actionRequests: options.actionPlan?.actionRequests || [],

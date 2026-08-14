@@ -7,6 +7,7 @@ dotenv.config({ quiet: true });
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
+const dataRoot = path.resolve(process.env.DATA_ROOT || projectRoot);
 const storageDriver = process.env.STORAGE_DRIVER || 'local';
 const authMode = process.env.AUTH_MODE || 'disabled';
 const mcpEnabled = process.env.MCP_ENABLED === 'true';
@@ -27,6 +28,8 @@ if (mcpEnabled && !process.env.MCP_TOKEN) {
 }
 
 export const config = {
+  projectRoot,
+  dataRoot,
   port: Number(process.env.PORT || 3000),
   db: {
     host: process.env.DB_HOST || '127.0.0.1',
@@ -38,7 +41,7 @@ export const config = {
   },
   storage: {
     driver: storageDriver,
-    localRoot: path.resolve(process.env.STORAGE_LOCAL_ROOT || path.join(projectRoot, 'uploads')),
+    localRoot: path.resolve(process.env.STORAGE_LOCAL_ROOT || (process.env.DATA_ROOT ? path.join(dataRoot, 'resources') : path.join(projectRoot, 'uploads'))),
     s3: {
       endpoint: process.env.S3_ENDPOINT || '',
       region: process.env.S3_REGION || 'us-east-1',

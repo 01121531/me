@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "readTools": [
+    "search_workspace",
+    "list_tasks",
+    "get_task_context",
+    "list_logs",
+    "list_notes",
+    "list_resources",
+    "get_resource_content",
+    "get_report"
+  ],
+  "approvalTools": [
+    "create_task",
+    "update_task",
+    "create_log",
+    "update_log",
+    "create_note",
+    "update_note",
+    "create_resource",
+    "update_resource",
+    "link_resource",
+    "move_resource",
+    "assign_existing_tags"
+  ],
+  "forbiddenTools": [
+    "create_folder",
+    "create_tag",
+    "delete_record",
+    "write_without_approval"
+  ]
+}

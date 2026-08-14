@@ -194,6 +194,7 @@ export function mapNote(row) {
     content: row.content,
     contentJson: parseJsonField(row.content_json),
     sortOrder: Number(row.sort_order || 0),
+    aiVisibility: row.ai_visibility || 'inherit',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     deletedAt: row.deleted_at || null,

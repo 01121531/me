@@ -1,0 +1,19 @@
+name: workspace-agent
+version: 1
+runtime: node
+model:
+  provider: openai-compatible
+  config_source: server-settings
+retrieval:
+  structured: mysql
+  semantic: qdrant
+  semantic_optional: true
+policies:
+  redact_before_cloud: true
+  require_sources: true
+  require_approval_for_writes: true
+  allow_create_taxonomy: false
+tools:
+  manifest: tools/manifest.json
+evals:
+  cases: evals/cases.json

@@ -233,6 +233,10 @@ async function recognizeImageBatchLocally(images) {
 }
 
 async function describeImageBatch(images, options = {}) {
+  if (options.allowCloud === false) {
+    const text = await recognizeImageBatchLocally(images);
+    return { text, parser: 'local-ocr' };
+  }
   try {
     const text = await describeImageBatchWithModel(images, options);
     if (text) return { text, parser: 'vision' };
@@ -306,7 +310,7 @@ async function renderPdfPages(buffer) {
   };
 }
 
-async function describePdfPages(attachment, buffer) {
+async function describePdfPages(attachment, buffer, options = {}) {
   const { images, pageCount, truncated } = await renderPdfPages(buffer);
   const batchSize = Math.max(1, Number(config.ai.ocr.batchPages || 4));
   const chunks = [];
@@ -317,6 +321,7 @@ async function describePdfPages(attachment, buffer) {
       title: attachment.original_name,
       pageOffset: index,
       kind: 'pdf',
+      allowCloud: options.allowCloud,
     });
     if (described.text) chunks.push(described.text);
     if (described.parser === 'local-ocr' && index + batchSize < images.length) {
@@ -339,7 +344,7 @@ async function describePdfPages(attachment, buffer) {
   };
 }
 
-async function extractPdfTextOrVision(attachment, buffer) {
+async function extractPdfTextOrVision(attachment, buffer, options = {}) {
   const parsed = await extractAttachmentText(attachment, buffer, config.ai.attachmentParsing.maxChars);
   const text = trimText(parsed.text || '');
   if (compactText(text).length >= Number(config.ai.ocr.minTextChars || 80)) {
@@ -351,7 +356,7 @@ async function extractPdfTextOrVision(attachment, buffer) {
     };
   }
 
-  const vision = await describePdfPages(attachment, buffer);
+  const vision = await describePdfPages(attachment, buffer, options);
   const combined = [text && compactText(text) !== '-- 1 of 1 --' ? text : '', vision.text]
     .filter(Boolean)
     .join('\n\n');
@@ -362,11 +367,12 @@ async function extractPdfTextOrVision(attachment, buffer) {
   };
 }
 
-async function extractImageDescription(attachment, buffer) {
+async function extractImageDescription(attachment, buffer, options = {}) {
   const image = await imageBufferToDataUrl(buffer, attachment.mime_type || 'image/jpeg');
   const described = await describeImageBatch([image], {
     title: attachment.original_name,
     kind: 'image',
+    allowCloud: options.allowCloud,
   });
   return {
     parser: described.parser === 'local-ocr' ? 'image-local-ocr' : 'image-vision',
@@ -376,10 +382,10 @@ async function extractImageDescription(attachment, buffer) {
   };
 }
 
-async function extractTextForAttachment(attachment, buffer) {
+async function extractTextForAttachment(attachment, buffer, options = {}) {
   const extension = extensionOf(attachment);
-  if (extension === '.pdf') return extractPdfTextOrVision(attachment, buffer);
-  if (imageExtensions.has(extension)) return extractImageDescription(attachment, buffer);
+  if (extension === '.pdf') return extractPdfTextOrVision(attachment, buffer, options);
+  if (imageExtensions.has(extension)) return extractImageDescription(attachment, buffer, options);
 
   const extracted = await extractAttachmentText(attachment, buffer, config.ai.attachmentParsing.maxChars);
   return {
@@ -390,14 +396,14 @@ async function extractTextForAttachment(attachment, buffer) {
   };
 }
 
-export async function extractTemporaryAttachmentText({ originalName, mimeType, buffer }) {
+export async function extractTemporaryAttachmentText({ originalName, mimeType, buffer, allowCloud = true }) {
   if (!Buffer.isBuffer(buffer) || !buffer.length) {
     return { parser: null, text: '', pageCount: null, truncated: false };
   }
   return extractTextForAttachment({
     original_name: String(originalName || '微信附件'),
     mime_type: String(mimeType || 'application/octet-stream'),
-  }, buffer);
+  }, buffer, { allowCloud });
 }
 
 export async function extractAndCacheAttachmentText(kind, id, { force = false } = {}) {
