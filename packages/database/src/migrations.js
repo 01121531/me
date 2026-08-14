@@ -1,8 +1,14 @@
 import { workspaceResourcesMigration } from '../../../database/migrations/001-workspace-resources.js';
 import { resourceActionsMigration } from '../../../database/migrations/002-resource-actions.js';
 import { legacyNoteDualWriteMigration } from '../../../database/migrations/003-legacy-note-dual-write.js';
+import { resourceAiDescriptionsMigration } from '../../../database/migrations/004-resource-ai-descriptions.js';
 
-const migrations = [workspaceResourcesMigration, resourceActionsMigration, legacyNoteDualWriteMigration];
+const migrations = [
+  workspaceResourcesMigration,
+  resourceActionsMigration,
+  legacyNoteDualWriteMigration,
+  resourceAiDescriptionsMigration,
+];
 const lockName = 'assistant_workspace_schema_migrations';
 
 export async function runVersionedMigrations(db) {

@@ -248,6 +248,13 @@ export function refreshRuntimeConfig() {
   config.ai.ocr.batchPages = positiveInteger(process.env.OCR_BATCH_PAGES, 4, 1, 20);
   config.ai.ocr.renderScale = Math.max(0.5, Math.min(3, Number(process.env.OCR_PDF_RENDER_SCALE || 1.2)));
   config.ai.ocr.minTextChars = positiveInteger(process.env.OCR_MIN_TEXT_CHARS, 80, 1, 2000);
+  config.ai.resourceDescription.enabled = process.env.RESOURCE_AI_DESCRIPTION_ENABLED !== 'false';
+  config.ai.resourceDescription.maxInputChars = positiveInteger(
+    process.env.RESOURCE_AI_DESCRIPTION_MAX_INPUT_CHARS,
+    16000,
+    1000,
+    60000,
+  );
   config.ai.litellm.baseUrl = process.env.LITELLM_BASE_URL || '';
   config.ai.litellm.apiKey = process.env.LITELLM_API_KEY || '';
   config.ai.litellm.embeddingModel = process.env.LITELLM_EMBEDDING_MODEL || '';
@@ -263,6 +270,10 @@ export function getSettingsSnapshot() {
   return {
     ai: {
       indexingEnabled: Boolean(config.ai.indexingEnabled),
+      resourceDescription: {
+        enabled: Boolean(config.ai.resourceDescription.enabled),
+        maxInputChars: config.ai.resourceDescription.maxInputChars,
+      },
       litellm: {
         baseUrl: config.ai.litellm.baseUrl,
         apiKey: maskSecret(config.ai.litellm.apiKey),
@@ -295,6 +306,8 @@ export function getSettingsSnapshot() {
 export async function saveAiSettings(payload = {}) {
   const updates = {
     AI_INDEXING_ENABLED: payload.indexingEnabled ? 'true' : 'false',
+    RESOURCE_AI_DESCRIPTION_ENABLED: payload.resourceDescriptionEnabled === false ? 'false' : 'true',
+    RESOURCE_AI_DESCRIPTION_MAX_INPUT_CHARS: String(positiveInteger(payload.resourceDescriptionMaxInputChars, 16000, 1000, 60000)),
     LITELLM_BASE_URL: httpUrl(payload.litellmBaseUrl, 'LiteLLM Base URL'),
     LITELLM_CHAT_MODEL: limitedText(payload.litellmChatModel, 120, '聊天模型'),
     LITELLM_EMBEDDING_MODEL: limitedText(payload.litellmEmbeddingModel, 120, 'Embedding 模型'),

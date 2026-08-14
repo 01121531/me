@@ -85,6 +85,10 @@ export const config = {
       maxBytes: positiveNumber(process.env.AI_ATTACHMENT_PARSE_MAX_BYTES, 12 * 1024 * 1024, 1024),
       maxChars: positiveNumber(process.env.AI_ATTACHMENT_TEXT_MAX_CHARS, 80000, 1000),
     },
+    resourceDescription: {
+      enabled: process.env.RESOURCE_AI_DESCRIPTION_ENABLED !== 'false',
+      maxInputChars: positiveNumber(process.env.RESOURCE_AI_DESCRIPTION_MAX_INPUT_CHARS, 16000, 1000),
+    },
     ocr: {
       baseUrl: process.env.OCR_BASE_URL || process.env.LITELLM_BASE_URL || '',
       apiKey: process.env.OCR_API_KEY || process.env.LITELLM_API_KEY || '',

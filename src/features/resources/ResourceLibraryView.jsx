@@ -29,6 +29,13 @@ import './resource-library.css';
 const kindLabels = { file: '文件', link: '链接', text: '文本' };
 const statusLabels = { draft: '草稿', processing: '处理中', ready: '可检索', failed: '处理失败' };
 const aiLabels = { inherit: '允许 AI 使用', allow: '允许 AI 使用', deny: '禁止 AI 使用' };
+const descriptionStatusLabels = {
+  pending: '等待生成',
+  completed: 'AI 已生成',
+  fallback: '本地摘要',
+  skipped: '仅本地处理',
+  failed: '生成失败',
+};
 
 function formatBytes(value) {
   const bytes = Number(value || 0);
@@ -437,6 +444,9 @@ function ResourceDetailDrawer({ resource, folders, tags, tasks, onClose, onChang
             <div className="resource-section-heading"><div><span>资料信息</span><h3>可编辑元数据</h3></div><button type="button" className="resource-primary-button" onClick={save} disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : null}保存</button></div>
             <label><span>标题</span><input value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} /></label>
             <label><span>说明</span><textarea rows={3} value={form.description || ''} onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+            <small className="resource-description-source">
+              {detail.descriptionSource === 'ai' ? <><Bot size={14} />当前说明由 AI 自动生成，编辑并保存后将转为人工说明。</> : '人工说明优先，重新处理资料不会覆盖。'}
+            </small>
             <div className="resource-form-grid">
               <label><span>目录</span><select value={form.folderId} onChange={(event) => setForm({ ...form, folderId: event.target.value })}><option value="">根目录</option>{folderRows(folders).map((folder) => <option key={folder.id} value={folder.id}>{'　'.repeat(folder.depth)}{folder.name}</option>)}</select></label>
               <label><span>AI 可见性</span><select value={form.aiVisibility} onChange={(event) => setForm({ ...form, aiVisibility: event.target.value })}><option value="inherit">允许 AI 使用</option><option value="allow">明确允许 AI 使用</option><option value="deny">禁止 AI 使用</option></select></label>
@@ -448,7 +458,17 @@ function ResourceDetailDrawer({ resource, folders, tags, tasks, onClose, onChang
             <div className="resource-section-heading"><div><span>内容处理</span><h3>提取与 AI 摘要</h3></div>{detail.aiVisibility === 'deny' && <em className="resource-ai-denied"><ShieldOff size={15} />AI 已禁用</em>}</div>
             <div className="resource-content-summary">
               <p>{detail.content?.summary || (detail.status === 'processing' ? '正在提取正文并生成摘要。' : '当前版本还没有可显示的摘要。')}</p>
-              <dl><div><dt>处理器</dt><dd>{detail.content?.parser || '未识别'}</dd></div><div><dt>文字</dt><dd>{detail.content?.textChars || 0} 字</dd></div><div><dt>页数</dt><dd>{detail.content?.pageCount ?? '未知'}</dd></div></dl>
+              {detail.content?.autoDescription && detail.content.autoDescription !== detail.description && (
+                <div className="resource-auto-description"><strong>自动文件说明</strong><span>{detail.content.autoDescription}</span></div>
+              )}
+              {Boolean(detail.content?.keywords?.length) && (
+                <div className="resource-keywords" aria-label="检索关键词">
+                  {detail.content.keywords.map((keyword) => <span key={keyword}>{keyword}</span>)}
+                </div>
+              )}
+              <dl><div><dt>处理器</dt><dd>{detail.content?.parser || '未识别'}</dd></div><div><dt>文字</dt><dd>{detail.content?.textChars || 0} 字</dd></div><div><dt>页数</dt><dd>{detail.content?.pageCount ?? '未知'}</dd></div><div><dt>文件说明</dt><dd>{descriptionStatusLabels[detail.content?.descriptionStatus] || '等待生成'}</dd></div></dl>
+              {detail.content?.descriptionModel && <small className="resource-description-model">模型：{detail.content.descriptionModel}</small>}
+              {detail.content?.descriptionError && detail.content?.descriptionStatus === 'fallback' && <div className="resource-processing-notice">AI 说明暂不可用，当前已使用本地摘要，不影响检索。</div>}
               {detail.content?.error && <div className="resource-processing-error">{friendlyProcessingError(detail.content.error)}</div>}
             </div>
           </section>

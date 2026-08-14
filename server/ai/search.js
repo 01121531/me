@@ -548,6 +548,8 @@ function resourceNode(row, score = 0.74) {
       row.tag_names ? `标签：${row.tag_names}` : '',
       row.source_url ? `来源：${row.source_url}` : '',
       row.summary ? `摘要：${row.summary}` : '',
+      row.auto_description ? `自动说明：${row.auto_description}` : '',
+      row.keywords_json ? `检索关键词：${String(row.keywords_json)}` : '',
       row.extracted_text ? `内容：${row.extracted_text}` : '',
     ].filter(Boolean).join('\n'))),
     metadata: {
@@ -803,7 +805,15 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     0.7,
   )));
 
-  const resourceLike = likeClause(['r.title', 'r.description', 'c.extracted_text', 't.name'], terms);
+  const resourceLike = likeClause([
+    'r.title',
+    'r.description',
+    'c.summary',
+    'c.auto_description',
+    'CAST(c.keywords_json AS CHAR)',
+    'c.extracted_text',
+    't.name',
+  ], terms);
   const resourceParams = [...resourceLike.params];
   const resourceTaskFilter = normalizedTaskId
     ? "AND EXISTS (SELECT 1 FROM resource_relations task_relation WHERE task_relation.resource_id = r.id AND task_relation.target_type = 'task' AND task_relation.target_id = ?)"
@@ -813,6 +823,7 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     `
       SELECT r.*, v.public_id AS version_public_id, v.original_name, v.mime_type, v.storage_key,
         v.source_url, c.status AS content_status, c.parser, c.extracted_text, c.summary,
+        c.auto_description, c.keywords_json,
         c.text_chars, c.error_message,
         GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ', ') AS tag_names,
         MIN(CASE WHEN rr.target_type = 'task' THEN rr.target_id END) AS task_id
@@ -836,6 +847,8 @@ async function keywordHits(question, { taskId = null, limit = 8 } = {}) {
     matchedFieldsFor(terms, {
       '资料标题': row.title,
       '资料说明': row.description,
+      '自动说明': row.auto_description,
+      '检索关键词': row.keywords_json,
       '资料正文': row.extracted_text,
       '资料标签': row.tag_names,
     }),
@@ -1426,6 +1439,7 @@ async function attachmentInventoryHits(question, options = {}) {
     `
       SELECT r.*, v.public_id AS version_public_id, v.original_name, v.mime_type, v.storage_key,
         v.source_url, c.status AS content_status, c.parser, c.extracted_text, c.summary,
+        c.auto_description, c.keywords_json,
         c.text_chars, c.error_message,
         GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ', ') AS tag_names,
         MIN(CASE WHEN rr.target_type = 'task' THEN rr.target_id END) AS task_id

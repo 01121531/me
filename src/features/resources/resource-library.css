@@ -529,13 +529,21 @@
 .resource-section-heading .resource-primary-button,
 .resource-section-heading .resource-secondary-button { min-height: 38px; }
 .resource-ai-denied { display: inline-flex; align-items: center; gap: 5px; color: var(--danger); font-size: 12px; font-style: normal; }
+.resource-description-source { display: inline-flex; align-items: center; gap: 6px; margin-top: -7px; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
 
 .resource-content-summary { padding-left: 14px; border-left: 3px solid #0f766e; }
 .resource-content-summary p { margin: 0 0 14px; color: var(--text-secondary); line-height: 1.7; white-space: pre-wrap; }
-.resource-content-summary dl { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
+.resource-auto-description { display: grid; gap: 5px; margin: 0 0 14px; padding: 12px; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-soft); }
+.resource-auto-description strong { font-size: 12px; }
+.resource-auto-description span { color: var(--text-secondary); font-size: 13px; line-height: 1.65; }
+.resource-keywords { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; }
+.resource-keywords span { padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-panel); color: var(--text-secondary); font-size: 11px; }
+.resource-content-summary dl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 0; }
 .resource-content-summary dl div { padding: 10px; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-soft); }
 .resource-content-summary dt { color: var(--text-muted); font-size: 11px; }
 .resource-content-summary dd { margin: 4px 0 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.resource-description-model { display: block; margin-top: 9px; color: var(--text-muted); font-size: 11px; }
+.resource-processing-notice { margin-top: 10px; padding: 10px 12px; border-radius: 7px; background: var(--warning-light); color: var(--warning); font-size: 13px; line-height: 1.5; }
 .resource-processing-error { padding: 10px 12px; border-radius: 7px; background: var(--danger-light); color: var(--danger); font-size: 13px; line-height: 1.5; }
 
 .resource-relation-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }

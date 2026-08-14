@@ -9,9 +9,9 @@
 
 ## Resources
 
-- `resources`: logical file, link or text item with folder, AI visibility and processing state.
+- `resources`: logical file, link or text item with folder, AI visibility and processing state. `description_source` protects manual descriptions from automatic replacement.
 - `resource_versions`: immutable versions, checksums, storage keys and source URLs.
-- `resource_contents`: extracted text, parser result, summary and processing error.
+- `resource_contents`: extracted text, parser result, summary, automatic description, search keywords, generation status/model and processing errors.
 - `resource_relations`: polymorphic task, log and note links.
 - `legacy_resource_map`: one-to-one map from every old attachment row to its migrated resource version.
 

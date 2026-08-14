@@ -24,5 +24,6 @@ The system remains a modular monolith. `apps`, `packages` and `agents` are owner
 - Files live outside database rows and should live outside release directories in production.
 - User-created taxonomy is authoritative. AI can only use existing folders and tags.
 - Cloud-bound content is redacted and respects per-record AI visibility.
+- PDF and image processing creates a grounded description and search keywords after extraction or OCR; model failures use a local fallback and manual descriptions remain authoritative.
 - Agent writes always enter the approval table.
 - Existing `/api/*` endpoints remain available during migration.

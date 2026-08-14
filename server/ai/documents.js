@@ -125,6 +125,8 @@ export async function loadIndexDocument(entityType, entityId) {
           v.source_url,
           c.extracted_text,
           c.summary,
+          c.auto_description,
+          c.keywords_json,
           GROUP_CONCAT(DISTINCT t.name ORDER BY t.name SEPARATOR ', ') AS tag_names,
           MIN(CASE WHEN rr.target_type = 'task' THEN rr.target_id END) AS task_id
         FROM resources r
@@ -148,6 +150,8 @@ export async function loadIndexDocument(entityType, entityId) {
       row.tag_names ? `标签：${row.tag_names}` : '',
       row.source_url ? `来源：${row.source_url}` : '',
       row.summary ? `摘要：${row.summary}` : '',
+      row.auto_description ? `自动说明：${row.auto_description}` : '',
+      row.keywords_json ? `检索关键词：${String(row.keywords_json)}` : '',
       row.extracted_text ? `内容：${row.extracted_text}` : '',
     ].filter(Boolean).join('\n'));
     return toDocument('resource', row, text, {

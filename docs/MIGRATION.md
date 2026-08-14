@@ -8,5 +8,8 @@
 6. Set `DATA_ROOT` for new production deployments, or retain `STORAGE_LOCAL_ROOT` for an existing deployment.
 7. Rebuild the AI index after reconciliation.
 8. Keep old tables writable through adapters until all client paths use `/api/v1`.
+9. Run `npm run resources:describe` to backfill missing descriptions. Use `npm run resources:describe -- --all` only to regenerate every automatic description.
 
 Rollback is intentionally guarded. Set `ALLOW_MIGRATION_ROLLBACK=true` and run `node server/scripts/workspace-migrate.js down`. Never use rollback on production after new resource writes without a fresh backup.
+
+Automatic descriptions never replace manual descriptions. OCR or model failures retain a local file metadata description so the resource remains searchable.

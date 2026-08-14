@@ -14,3 +14,5 @@ Main resources:
 - `/api/v1/search`
 
 All endpoints use the existing authenticated session middleware. New clients should store and send stable `publicId` identifiers; numeric IDs remain a migration compatibility feature.
+
+Resource responses expose `descriptionSource`. Processed content includes `autoDescription`, `keywords`, `descriptionStatus`, `descriptionModel`, and `descriptionError`.

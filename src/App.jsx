@@ -7488,6 +7488,8 @@ function SystemView({ addToast, compact = false }) {
 function SettingsView({ addToast, askConfirm }) {
   const emptyAiForm = {
     indexingEnabled: false,
+    resourceDescriptionEnabled: true,
+    resourceDescriptionMaxInputChars: 16000,
     litellmBaseUrl: '',
     litellmApiKey: '',
     litellmChatModel: '',
@@ -7528,6 +7530,8 @@ function SettingsView({ addToast, askConfirm }) {
     setUpdateBranch(data.update?.branch || 'main');
     setAiForm({
       indexingEnabled: Boolean(data.ai?.indexingEnabled),
+      resourceDescriptionEnabled: data.ai?.resourceDescription?.enabled !== false,
+      resourceDescriptionMaxInputChars: data.ai?.resourceDescription?.maxInputChars || 16000,
       litellmBaseUrl: data.ai?.litellm?.baseUrl || '',
       litellmApiKey: '',
       litellmChatModel: data.ai?.litellm?.chatModel || '',
@@ -8036,6 +8040,24 @@ function SettingsView({ addToast, askConfirm }) {
             onChange={(event) => updateAiField('indexingEnabled', event.target.checked)}
           />
           <span>启用向量索引 Worker</span>
+        </label>
+        <label className="settings-toggle">
+          <input
+            type="checkbox"
+            checked={aiForm.resourceDescriptionEnabled}
+            onChange={(event) => updateAiField('resourceDescriptionEnabled', event.target.checked)}
+          />
+          <span>上传资料后自动生成文件说明</span>
+        </label>
+        <label>
+          <span>自动说明读取字数上限</span>
+          <input
+            type="number"
+            min="1000"
+            max="60000"
+            value={aiForm.resourceDescriptionMaxInputChars}
+            onChange={(event) => updateAiField('resourceDescriptionMaxInputChars', event.target.value)}
+          />
         </label>
         <label>
           <span>Qdrant URL</span>

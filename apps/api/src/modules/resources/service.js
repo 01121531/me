@@ -121,6 +121,7 @@ function mapResource(row) {
     kind: row.kind,
     title: row.title,
     description: row.description || '',
+    descriptionSource: row.description_source || (row.description ? 'manual' : 'none'),
     status: row.status,
     aiVisibility: row.ai_visibility,
     createdAt: row.created_at,
@@ -131,6 +132,11 @@ function mapResource(row) {
       status: row.content_status,
       parser: row.parser || null,
       summary: row.summary || '',
+      autoDescription: row.auto_description || '',
+      keywords: parseJson(row.keywords_json, []),
+      descriptionStatus: row.description_status || 'pending',
+      descriptionModel: row.description_model || null,
+      descriptionError: row.description_error || '',
       textChars: Number(row.text_chars || 0),
       pageCount: row.page_count === null ? null : Number(row.page_count),
       truncated: Boolean(row.truncated),
@@ -161,6 +167,11 @@ const resourceSelect = `
     c.status AS content_status,
     c.parser,
     c.summary,
+    c.auto_description,
+    c.keywords_json,
+    c.description_status,
+    c.description_model,
+    c.description_error,
     c.suggested_tags_json,
     c.text_chars,
     c.page_count,
@@ -455,9 +466,9 @@ export async function listResources(filters = {}) {
     const search = `%${String(filters.search).trim()}%`;
     where.push(`(r.title LIKE ? OR r.description LIKE ? OR EXISTS (
       SELECT 1 FROM resource_versions sv JOIN resource_contents sc ON sc.version_id = sv.id
-      WHERE sv.resource_id = r.id AND sc.extracted_text LIKE ?
+      WHERE sv.resource_id = r.id AND (sc.extracted_text LIKE ? OR sc.summary LIKE ? OR sc.auto_description LIKE ?)
     ))`);
-    params.push(search, search, search);
+    params.push(search, search, search, search, search);
   }
   if (filters.tagId) {
     const tagIds = await resolveTagIds(db, [filters.tagId], workspaceId);
@@ -488,9 +499,19 @@ async function createResourceBase(connection, input, workspaceId, status) {
   const publicId = crypto.randomUUID();
   const [result] = await connection.query(
     `INSERT INTO resources
-      (public_id, workspace_id, folder_id, kind, title, description, status, ai_visibility)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [publicId, workspaceId, folder?.id || null, input.kind, input.title, input.description || null, status, input.aiVisibility || 'inherit'],
+      (public_id, workspace_id, folder_id, kind, title, description, description_source, status, ai_visibility)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      publicId,
+      workspaceId,
+      folder?.id || null,
+      input.kind,
+      input.title,
+      input.description || null,
+      input.description ? 'manual' : 'none',
+      status,
+      input.aiVisibility || 'inherit',
+    ],
   );
   await setResourceTags(connection, result.insertId, tagIds);
   return { id: Number(result.insertId), publicId };
@@ -611,11 +632,18 @@ export async function updateResource(value, input) {
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
+    const nextDescription = input.description === undefined ? existing.description || null : input.description || null;
+    const nextDescriptionSource = input.description === undefined
+      ? existing.descriptionSource
+      : (String(input.description || '').trim() ? 'manual' : 'none');
     await connection.query(
-      `UPDATE resources SET title = ?, description = ?, folder_id = ?, ai_visibility = ? WHERE id = ?`,
+      `UPDATE resources
+       SET title = ?, description = ?, description_source = ?, folder_id = ?, ai_visibility = ?
+       WHERE id = ?`,
       [
         input.title ?? existing.title,
-        input.description === undefined ? existing.description || null : input.description,
+        nextDescription,
+        nextDescriptionSource,
         folder === undefined ? existing.folderId : folder?.id || null,
         input.aiVisibility ?? existing.aiVisibility,
         existing.id,

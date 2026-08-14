@@ -14,6 +14,7 @@
     "db:migrate": "node server/scripts/workspace-migrate.js up",
     "db:migrate:status": "node server/scripts/workspace-migrate.js status",
     "db:reconcile": "node server/scripts/workspace-reconcile.js",
+    "resources:describe": "node server/scripts/resource-description-backfill.js",
     "backup:create": "node server/scripts/backup.js create",
     "backup:verify": "node server/scripts/backup.js verify",
     "backup:restore": "node server/scripts/backup.js restore",

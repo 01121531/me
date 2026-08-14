@@ -5,7 +5,7 @@ import * as cheerio from 'cheerio';
 import { config } from '../../../server/config.js';
 import { getPool } from '../../../server/db.js';
 import { extractTemporaryAttachmentText } from '../../../server/ai/attachment-cache.js';
-import { scheduleIndexJob } from '../../../server/indexing.js';
+import { enqueueIndexJob } from '../../../server/indexing.js';
 import { readStoredAttachment } from '../../../server/storage.js';
 import { redactSensitiveText } from '../../../packages/domain/src/redaction.js';
 
@@ -14,6 +14,110 @@ const maxRedirects = 4;
 
 function compactText(value) {
   return String(value || '').replace(/\u0000/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function chatCompletionsUrl(baseUrl) {
+  const normalized = String(baseUrl || '').replace(/\/+$/, '');
+  return normalized.endsWith('/v1') ? `${normalized}/chat/completions` : `${normalized}/v1/chat/completions`;
+}
+
+function parseModelJson(value) {
+  const text = String(value || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start < 0 || end <= start) throw new Error('模型没有返回有效的说明 JSON。');
+  return JSON.parse(text.slice(start, end + 1));
+}
+
+function normalizeKeywords(value) {
+  const entries = Array.isArray(value) ? value : String(value || '').split(/[，,、;；\n]/);
+  return [...new Set(entries
+    .map((item) => compactText(item).slice(0, 40))
+    .filter((item) => item.length >= 2))]
+    .slice(0, 12);
+}
+
+function fallbackResourceDescription(version, text) {
+  const cleanText = compactText(redactSensitiveText(text));
+  const fileName = version.original_name || version.resource_title || '未命名资料';
+  const type = version.mime_type || version.kind || '未知类型';
+  if (!cleanText) {
+    return {
+      summary: `${fileName}（${type}）`,
+      description: `资料文件“${fileName}”，文件类型为 ${type}。当前尚未识别出可用于检索的正文。`,
+      keywords: normalizeKeywords([fileName, type]),
+    };
+  }
+  return {
+    summary: cleanText.slice(0, 160),
+    description: `该资料主要包含以下内容：${cleanText.slice(0, 620)}`,
+    keywords: normalizeKeywords([fileName, ...cleanText.split(/[\s，。；：、,.;:()（）]+/).filter((item) => item.length >= 2)]),
+  };
+}
+
+export async function generateResourceDescription(version, text, { fetchImpl = fetch } = {}) {
+  const fallback = fallbackResourceDescription(version, text);
+  const cleanText = compactText(redactSensitiveText(text));
+  if (!cleanText || version.ai_visibility === 'deny' || !config.ai.resourceDescription.enabled) {
+    return { ...fallback, status: cleanText ? 'skipped' : 'fallback', model: null, error: null };
+  }
+  const { baseUrl, apiKey, chatModel } = config.ai.litellm;
+  if (!baseUrl || !apiKey || !chatModel) {
+    return { ...fallback, status: 'fallback', model: null, error: '聊天模型未配置，已使用本地摘要。' };
+  }
+
+  try {
+    const response = await fetchImpl(chatCompletionsUrl(baseUrl), {
+      method: 'POST',
+      signal: AbortSignal.timeout(30_000),
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: chatModel,
+        temperature: 0.1,
+        messages: [
+          {
+            role: 'system',
+            content: [
+              '你是个人资料库的文件编目助手。',
+              '只能根据给定文件名、类型和识别正文生成说明，不得补充或猜测正文中没有的事实。',
+              '返回严格 JSON：{"summary":"30-100字摘要","description":"80-300字文件说明","keywords":["关键词"]}。',
+              '关键词保留公司、人名、项目、文档类型、编号主题等检索线索，但不要输出密码、Token、身份证号等敏感值。',
+            ].join('\n'),
+          },
+          {
+            role: 'user',
+            content: [
+              `文件名：${version.original_name || version.resource_title || '未命名资料'}`,
+              `文件类型：${version.mime_type || version.kind || '未知'}`,
+              `识别方式：${version.parser || '自动识别'}`,
+              `识别正文：${cleanText.slice(0, config.ai.resourceDescription.maxInputChars)}`,
+            ].join('\n'),
+          },
+        ],
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(body || `说明模型请求失败：HTTP ${response.status}`);
+    }
+    const json = await response.json();
+    const parsed = parseModelJson(json.choices?.[0]?.message?.content);
+    const summary = compactText(parsed.summary).slice(0, 500);
+    const description = compactText(parsed.description).slice(0, 1600);
+    const keywords = normalizeKeywords(parsed.keywords);
+    if (!summary || !description) throw new Error('模型返回的摘要或说明为空。');
+    return { summary, description, keywords, status: 'completed', model: chatModel, error: null };
+  } catch (error) {
+    return {
+      ...fallback,
+      status: 'fallback',
+      model: chatModel,
+      error: String(error?.message || error).slice(0, 1000),
+    };
+  }
 }
 
 function isPrivateIpv4(address) {
@@ -193,18 +297,29 @@ export async function processResourceVersion(versionId) {
 
     const text = String(extracted.text || '').slice(0, config.ai.attachmentParsing.maxChars);
     const status = text ? 'completed' : 'unsupported';
-    const summary = compactText(redactSensitiveText(text)).slice(0, 360);
-    const suggestedTags = await suggestExistingTags(version.workspace_id, text);
+    const descriptionResult = await generateResourceDescription(
+      { ...version, parser: extracted.parser },
+      text,
+    );
+    const summary = descriptionResult.summary;
+    const suggestedTags = await suggestExistingTags(
+      version.workspace_id,
+      [text, descriptionResult.description, ...descriptionResult.keywords].join(' '),
+    );
     const contentHash = text ? crypto.createHash('sha256').update(text).digest('hex') : null;
     await db.query(
       `
         INSERT INTO resource_contents
-          (version_id, status, parser, extracted_text, summary, suggested_tags_json,
+          (version_id, status, parser, extracted_text, summary, auto_description, keywords_json,
+           description_status, description_model, description_error, suggested_tags_json,
            text_chars, page_count, truncated, content_hash, error_message)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
         ON DUPLICATE KEY UPDATE
           status = VALUES(status), parser = VALUES(parser), extracted_text = VALUES(extracted_text),
-          summary = VALUES(summary), suggested_tags_json = VALUES(suggested_tags_json),
+          summary = VALUES(summary), auto_description = VALUES(auto_description),
+          keywords_json = VALUES(keywords_json), description_status = VALUES(description_status),
+          description_model = VALUES(description_model), description_error = VALUES(description_error),
+          suggested_tags_json = VALUES(suggested_tags_json),
           text_chars = VALUES(text_chars), page_count = VALUES(page_count),
           truncated = VALUES(truncated), content_hash = VALUES(content_hash), error_message = NULL
       `,
@@ -214,6 +329,11 @@ export async function processResourceVersion(versionId) {
         extracted.parser,
         text || null,
         summary || null,
+        descriptionResult.description || null,
+        JSON.stringify(descriptionResult.keywords),
+        descriptionResult.status,
+        descriptionResult.model,
+        descriptionResult.error,
         JSON.stringify(suggestedTags),
         text.length,
         extracted.pageCount,
@@ -221,14 +341,21 @@ export async function processResourceVersion(versionId) {
         contentHash,
       ],
     );
-    await db.query('UPDATE resources SET status = ? WHERE id = ?', ['ready', version.resource_id]);
+    await db.query(
+      `UPDATE resources
+       SET status = ?,
+           description = CASE WHEN description_source IN ('none', 'ai') THEN ? ELSE description END,
+           description_source = CASE WHEN description_source IN ('none', 'ai') THEN 'ai' ELSE description_source END
+       WHERE id = ?`,
+      ['ready', descriptionResult.description || null, version.resource_id],
+    );
     await db.query(
       `UPDATE resource_processing_jobs
        SET status = 'completed', completed_at = CURRENT_TIMESTAMP, locked_at = NULL, locked_by = NULL, last_error = NULL
        WHERE version_id = ?`,
       [versionId],
     );
-    scheduleIndexJob({
+    await enqueueIndexJob({
       targetType: 'resources',
       targetId: version.resource_id,
       operation: 'upsert',
@@ -237,17 +364,34 @@ export async function processResourceVersion(versionId) {
     return { resourceId: Number(version.resource_id), versionId: Number(versionId), status: 'ready' };
   } catch (error) {
     const message = String(error?.message || error || '资料处理失败').slice(0, 4000);
+    const fallback = fallbackResourceDescription(version, '');
     await db.query(
-      `UPDATE resource_contents SET status = 'failed', error_message = ? WHERE version_id = ?`,
-      [message, versionId],
+      `UPDATE resource_contents
+       SET status = 'failed', summary = ?, auto_description = ?, keywords_json = ?,
+           description_status = 'failed', description_error = ?, error_message = ?
+       WHERE version_id = ?`,
+      [fallback.summary, fallback.description, JSON.stringify(fallback.keywords), message, message, versionId],
     );
-    await db.query('UPDATE resources SET status = ? WHERE id = ?', ['failed', version.resource_id]);
+    await db.query(
+      `UPDATE resources
+       SET status = 'failed',
+           description = CASE WHEN description_source IN ('none', 'ai') THEN ? ELSE description END,
+           description_source = CASE WHEN description_source IN ('none', 'ai') THEN 'ai' ELSE description_source END
+       WHERE id = ?`,
+      [fallback.description, version.resource_id],
+    );
     await db.query(
       `UPDATE resource_processing_jobs
        SET status = 'failed', completed_at = CURRENT_TIMESTAMP, locked_at = NULL, locked_by = NULL, last_error = ?
        WHERE version_id = ?`,
       [message, versionId],
     );
+    await enqueueIndexJob({
+      targetType: 'resources',
+      targetId: version.resource_id,
+      operation: 'upsert',
+      reason: 'resource metadata indexed after processing failure',
+    });
     throw error;
   }
 }

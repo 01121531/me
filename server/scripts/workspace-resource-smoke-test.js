@@ -18,6 +18,7 @@ import {
 import { inspectSensitiveText, redactSensitiveText } from '../../packages/domain/src/redaction.js';
 import { planAiActionRequest } from '../ai/action-planner.js';
 import { rejectActionRequest } from '../action-requests.js';
+import { generateResourceDescription } from '../../apps/worker/src/resource-processing.js';
 
 const stamp = Date.now();
 const title = `__workspace_resource_smoke_${stamp}__`;
@@ -29,6 +30,8 @@ let tagId;
 let actionRequestId;
 let secondTaskId;
 let legacyNoteId;
+const originalResourceDescriptionEnabled = config.ai.resourceDescription.enabled;
+config.ai.resourceDescription.enabled = false;
 
 async function uploadFixture(name, suffix = '') {
   const body = Buffer.from(`resource smoke ${stamp}${suffix}`);
@@ -133,6 +136,52 @@ try {
   if (!inspectSensitiveText(secret).sensitive || redactSensitiveText(secret).includes('demo-secret-123')) {
     throw new Error('Sensitive text redaction failed.');
   }
+  const previousDescriptionConfig = {
+    enabled: config.ai.resourceDescription.enabled,
+    baseUrl: config.ai.litellm.baseUrl,
+    apiKey: config.ai.litellm.apiKey,
+    chatModel: config.ai.litellm.chatModel,
+  };
+  config.ai.resourceDescription.enabled = true;
+  config.ai.litellm.baseUrl = 'https://model.example/v1';
+  config.ai.litellm.apiKey = 'smoke-key';
+  config.ai.litellm.chatModel = 'smoke-model';
+  let descriptionResult;
+  try {
+    descriptionResult = await generateResourceDescription(
+      {
+        original_name: 'customer-contract.pdf',
+        resource_title: 'Customer contract',
+        mime_type: 'application/pdf',
+        kind: 'file',
+        parser: 'pdf',
+        ai_visibility: 'allow',
+      },
+      '合同编号 HT-2026，甲方为示例公司。API_KEY=sk-test-secret-value',
+      {
+        fetchImpl: async (_url, options) => {
+          const body = JSON.parse(options.body);
+          const prompt = body.messages.map((message) => String(message.content || '')).join('\n');
+          if (prompt.includes('sk-test-secret-value')) throw new Error('Description prompt was not redacted.');
+          return new Response(JSON.stringify({
+            choices: [{ message: { content: JSON.stringify({
+              summary: '示例公司合同资料。',
+              description: '该文件记录示例公司的合同信息，包含合同编号等可检索字段。',
+              keywords: ['示例公司', '合同', 'HT-2026'],
+            }) } }],
+          }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        },
+      },
+    );
+  } finally {
+    config.ai.resourceDescription.enabled = previousDescriptionConfig.enabled;
+    config.ai.litellm.baseUrl = previousDescriptionConfig.baseUrl;
+    config.ai.litellm.apiKey = previousDescriptionConfig.apiKey;
+    config.ai.litellm.chatModel = previousDescriptionConfig.chatModel;
+  }
+  if (!descriptionResult.description.includes('示例公司') || !descriptionResult.keywords.includes('合同')) {
+    throw new Error('Automatic resource description generation failed.');
+  }
   const planned = await planAiActionRequest(
     `创建文本资料：标题：${title}_agent，内容：该内容必须经过审批后才能保存`,
     { requestedBy: 'workspace-smoke', source: 'ai_chat' },
@@ -146,6 +195,7 @@ try {
   await rejectActionRequest(actionRequestId, { decidedBy: 'workspace-smoke', reason: 'smoke cleanup' });
   console.log('Workspace resource smoke test passed.');
 } finally {
+  config.ai.resourceDescription.enabled = originalResourceDescriptionEnabled;
   const db = getPool();
   if (createdResourceIds.length) {
     const placeholders = createdResourceIds.map(() => '?').join(',');
