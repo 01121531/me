@@ -13,6 +13,7 @@ const workspaceAssistantPrompt = [
   '你是个人助理任务台的工作助手。',
   '每一次回答都必须基于本次提供的任务台数据库查询结果进行理解和组织；这些查询结果是工作区事实的唯一数据库。',
   '数据库事实只能来自下方提供的任务台资料；查询结果为零也是有效事实，资料不足时必须明确说明缺少什么，禁止自行补全。',
+  '当系统提供了“数据库结构化查询结果”和非零记录数时，必须完整承认这些记录，禁止回答“没有找到”“没有查到”或“资料不足”。',
   '回答使用中文，简洁，并在相关句子后标注来源编号，例如 [1]。',
   '只有查询资料中实际存在对应的 [编号] 来源时才能标注该编号；零结果或没有编号来源时禁止生成 [1] 等引用。',
   '回答要清楚区分数据库事实与 AI 建议；网页回答可以使用“数据库事实 / AI 建议”区块，微信短答应直接自然地回答，不必机械重复标题。',
@@ -261,8 +262,14 @@ function isIncompleteTaskQuestion(question) {
   return /未完成|没完成|還沒完成|没有完成|还有.*(?:没|未).*任务|待办任务|未处理任务|没做完|open tasks|incomplete tasks|unfinished tasks/.test(text);
 }
 
+function isCompletedTaskQuestion(question) {
+  const text = String(question || '').trim().toLowerCase();
+  if (/未完成|没完成|没有完成|尚未完成|還沒完成/.test(text)) return false;
+  return /(?:已完成|完成了|做完).{0,12}(?:任务|事项)|(?:任务|事项).{0,12}(?:已完成|完成了|做完)|完成的任务|completed tasks|finished tasks/.test(text);
+}
+
 function isTaskOverviewQuestion(question) {
-  return /任务总览|任务概览|全部任务|所有任务|有哪些任务|任务情况|任务统计|我的任务/.test(String(question || ''));
+  return /任务总览|任务概览|全部任务|所有任务|有哪些任务|任务有哪些|任务清单|任务列表|任务情况|任务统计|我的任务/.test(String(question || ''));
 }
 
 function isTodayLogQuestion(question) {
@@ -278,6 +285,16 @@ function isAttachmentInventoryQuestion(question) {
   return /(?:全部|所有|当前|现有|最近).{0,10}(?:附件|文件|pdf|图片)|(?:附件|文件).{0,10}(?:都有|有哪些|清单|列表|内容)|(?:发|发送|传|给我).{0,12}(?:一个|一份|任意|随便)?.{0,6}(?:pdf|附件|文件|图片)/i.test(text);
 }
 
+function isResourceInventoryQuestion(question) {
+  const text = String(question || '').trim();
+  return /(?:资料库|资料中心).{0,16}(?:都有什么|有什么|有哪些|文件|资料|内容|清单|列表)|(?:都有什么|有什么|有哪些|查看|列出).{0,12}(?:资料库|资料中心)/.test(text);
+}
+
+function isNoteInventoryQuestion(question) {
+  const text = String(question || '').trim();
+  return /(?:全部|所有|当前|现有|现在|我的).{0,12}(?:笔记|记事|备忘)|(?:笔记|记事|备忘).{0,12}(?:都有什么|有什么|有哪些|清单|列表)/.test(text);
+}
+
 function hasActionSignal(question) {
   const text = String(question || '').trim();
   if (/^(怎么|如何|为什么|能否介绍|可以怎样)/.test(text)) return false;
@@ -291,7 +308,10 @@ export function classifyAiQueryIntent(question) {
   if (isTodayLogQuestion(question)) return 'log_today';
   if (isWeekLogQuestion(question)) return 'log_week';
   if (isIncompleteTaskQuestion(question)) return 'incomplete_tasks';
+  if (isCompletedTaskQuestion(question)) return 'completed_tasks';
   if (isTaskOverviewQuestion(question)) return 'task_overview';
+  if (isResourceInventoryQuestion(question)) return 'resource_inventory';
+  if (isNoteInventoryQuestion(question)) return 'note_inventory';
   const hasTaskSignal = isIncompleteTaskQuestion(question)
     || /任务|待办|进行中|已完成|未完成|没完成|进度|状态|截止|优先级|工作日志|下一步|工时|耗时/.test(text);
   const hasNoteSignal = /笔记|记事|备忘|会议笔记|会议记录/.test(text);
@@ -306,11 +326,11 @@ export function classifyAiQueryIntent(question) {
 }
 
 function isTaskLikeIntent(intent) {
-  return ['task', 'task_note', 'task_overview', 'incomplete_tasks', 'task_progress', 'log_today', 'log_week'].includes(intent);
+  return ['task', 'task_note', 'task_overview', 'incomplete_tasks', 'completed_tasks', 'task_progress', 'log_today', 'log_week'].includes(intent);
 }
 
 function isNoteLikeIntent(intent) {
-  return intent === 'note' || intent === 'note_search';
+  return ['note', 'note_search', 'note_inventory'].includes(intent);
 }
 
 function stripGenericQueryPhrases(value) {
@@ -529,6 +549,8 @@ function noteNode(row, score = 0.4) {
       taskId: row.task_id ? Number(row.task_id) : null,
       title: row.title,
       category: row.category,
+      createdAt: row.created_at || null,
+      updatedAt: row.updated_at || null,
       searchMode: 'keyword',
     },
   };
@@ -1083,6 +1105,61 @@ function taskCardsHtml(items) {
   }).join('');
 }
 
+async function answerCompletedTasks(question, options = {}) {
+  if (!isCompletedTaskQuestion(question)) return null;
+  const taskId = normalizeTaskId(options.taskId);
+  const params = [];
+  const taskFilter = taskId ? 'AND id = ?' : '';
+  if (taskId) params.push(taskId);
+  const [rows] = await getPool().query(
+    `
+      SELECT *
+      FROM tasks
+      WHERE deleted_at IS NULL AND status = 'done' ${taskFilter}
+      ORDER BY updated_at DESC, sort_order ASC, id DESC
+      LIMIT 50
+    `,
+    params,
+  );
+  const hits = rows.map((row) => withSourceReason(
+    withMatchedFields(taskNode(row, 0.99), ['任务状态'], 0.99),
+    '已完成任务',
+  ));
+  if (!hits.length) {
+    return {
+      answer: '<section class="ai-fact-panel"><h3>数据库事实</h3><p>当前没有已完成任务。</p></section>',
+      sources: [],
+      grounded: true,
+      intent: 'completed_tasks',
+      facts: [],
+      suggestions: [],
+      actionRequests: [],
+    };
+  }
+  return {
+    answer: [
+      '<section class="ai-fact-panel">',
+      '<h3>数据库事实</h3>',
+      `<p>当前共有 <strong>${hits.length}</strong> 个已完成任务。</p>`,
+      `<section class="ai-metric-grid"><section class="ai-metric-card"><span>已完成任务</span><strong>${hits.length}</strong></section></section>`,
+      '</section>',
+      `<section class="ai-task-grid">${taskCardsHtml(hits)}</section>`,
+    ].join(''),
+    sources: hits.map(toSource),
+    grounded: true,
+    intent: 'completed_tasks',
+    facts: hits.map((hit) => ({
+      type: 'task',
+      id: Number(hit.metadata.entityId),
+      title: hit.metadata.title,
+      status: hit.metadata.status,
+      progress: hit.metadata.progress,
+    })),
+    suggestions: [],
+    actionRequests: [],
+  };
+}
+
 async function answerTaskOverview(question, options = {}) {
   if (!isTaskOverviewQuestion(question)) return null;
   const taskId = normalizeTaskId(options.taskId);
@@ -1357,6 +1434,82 @@ async function answerTaskProgress(question, options = {}) {
   };
 }
 
+async function answerNoteInventory(question, options = {}) {
+  if (!isNoteInventoryQuestion(question)) return null;
+  const taskId = normalizeTaskId(options.taskId);
+  const params = [];
+  const taskFilter = taskId ? 'AND n.task_id = ?' : '';
+  if (taskId) params.push(taskId);
+  const [rows] = await getPool().query(
+    `
+      SELECT n.*, t.title AS task_title
+      FROM task_notes n
+      LEFT JOIN tasks t ON t.id = n.task_id
+      WHERE n.deleted_at IS NULL
+        AND COALESCE(n.ai_visibility, 'inherit') <> 'deny'
+        AND (n.task_id IS NULL OR t.deleted_at IS NULL)
+        ${taskFilter}
+      ORDER BY n.updated_at DESC, n.id DESC
+      LIMIT 50
+    `,
+    params,
+  );
+  const hits = rows.map((row) => withSourceReason(
+    withMatchedFields(noteNode(row, 0.98), ['笔记清单'], 0.98),
+    '当前笔记清单',
+  ));
+  if (!hits.length) {
+    return {
+      answer: '<section class="ai-fact-panel"><h3>数据库事实</h3><p>当前没有可供 AI 使用的笔记。</p></section>',
+      sources: [],
+      grounded: true,
+      intent: 'note_inventory',
+      facts: [],
+      suggestions: [],
+      actionRequests: [],
+    };
+  }
+  const cards = hits.map((hit, index) => {
+    const metadata = hit.metadata || {};
+    const excerpt = cleanText(hit.text
+      .replace(/^笔记：[^\n]*\n?/, '')
+      .replace(/^分类：[^\n]*\n?/, '')
+      .replace(/^(?:关联任务：[^\n]*|独立笔记)\n?/, '')).slice(0, 180);
+    return [
+      '<section class="ai-task-panel-card">',
+      `<header><span class="ai-task-index">${index + 1}</span><strong>${escapeHtml(metadata.title || `笔记 #${metadata.entityId}`)}</strong><em>[${index + 1}]</em></header>`,
+      '<dl class="ai-task-meta">',
+      `<dt>分类</dt><dd>${escapeHtml(metadata.category || '未分类')}</dd>`,
+      `<dt>归属</dt><dd>${metadata.taskId ? '任务笔记' : '独立笔记'}</dd>`,
+      metadata.updatedAt ? `<dt>更新</dt><dd>${escapeHtml(metadata.updatedAt)}</dd>` : '',
+      '</dl>',
+      excerpt ? `<p>${escapeHtml(excerpt)}</p>` : '',
+      '</section>',
+    ].filter(Boolean).join('');
+  }).join('');
+  return {
+    answer: [
+      '<section class="ai-fact-panel">',
+      '<h3>数据库事实</h3>',
+      `<p>当前共有 <strong>${hits.length}</strong> 条可供 AI 使用的笔记。</p>`,
+      '</section>',
+      `<section class="ai-task-grid">${cards}</section>`,
+    ].join(''),
+    sources: hits.map(toSource),
+    grounded: true,
+    intent: 'note_inventory',
+    facts: hits.map((hit) => ({
+      type: 'note',
+      id: Number(hit.metadata.entityId),
+      title: hit.metadata.title,
+      category: hit.metadata.category || null,
+      taskId: hit.metadata.taskId || null,
+    })),
+    suggestions: [],
+    actionRequests: [],
+  };
+}
+
 function attachmentTypeFilter(question) {
   const text = String(question || '');
   if (/pdf/i.test(text)) return "AND (LOWER(a.mime_type) = 'application/pdf' OR LOWER(a.original_name) LIKE '%.pdf')";
@@ -1366,6 +1519,7 @@ function attachmentTypeFilter(question) {
 
 async function attachmentInventoryHits(question, options = {}) {
   const taskId = normalizeTaskId(options.taskId);
+  const resourceOnly = Boolean(options.resourceOnly);
   const limit = normalizeLimit(options.limit, 20, 50);
   const typeFilter = attachmentTypeFilter(question);
   const taskParams = taskId ? [taskId] : [];
@@ -1460,13 +1614,70 @@ async function attachmentInventoryHits(question, options = {}) {
     resourceParams,
   );
 
-  return [...resourceRows.map((row) => resourceNode(row, 0.9)), ...taskRows, ...logRows, ...noteRows]
+  const inventoryHits = resourceOnly
+    ? resourceRows.map((row) => resourceNode(row, 0.9))
+    : [...resourceRows.map((row) => resourceNode(row, 0.9)), ...taskRows, ...logRows, ...noteRows];
+  return inventoryHits
     .sort((left, right) => String(right.metadata.createdAt || '').localeCompare(String(left.metadata.createdAt || '')))
     .slice(0, limit)
     .map((hit) => withSourceReason(
       withMatchedFields(hit, ['附件清单'], hit.score),
       '当前附件清单',
     ));
+}
+
+async function answerResourceInventory(question, options = {}) {
+  if (!isResourceInventoryQuestion(question)) return null;
+  const hits = (await attachmentInventoryHits(question, { ...options, limit: 50, resourceOnly: true }))
+    .map((hit) => withSourceReason(
+      withMatchedFields(hit, ['资料库清单'], 0.99),
+      '当前资料库清单',
+    ));
+  if (!hits.length) {
+    return {
+      answer: '<section class="ai-fact-panel"><h3>数据库事实</h3><p>当前资料库没有可供 AI 使用的资料。</p></section>',
+      sources: [],
+      grounded: true,
+      intent: 'resource_inventory',
+      facts: [],
+      suggestions: [],
+      actionRequests: [],
+    };
+  }
+  const cards = hits.map((hit, index) => {
+    const metadata = hit.metadata || {};
+    const description = cleanText(hit.text
+      .replace(/^资料：[^\n]*\n?/, '')
+      .replace(/^说明：/, '')).slice(0, 240);
+    return [
+      '<section class="ai-file-panel">',
+      `<h3>${escapeHtml(metadata.fileName || metadata.title || `资料 ${index + 1}`)}</h3>`,
+      '<dl>',
+      `<dt>类型</dt><dd>${escapeHtml(metadata.mimeType || metadata.kind || '资料')}</dd>`,
+      `<dt>处理状态</dt><dd>${escapeHtml(metadata.textStatus || '未提取')}</dd>`,
+      '</dl>',
+      description ? `<p>${escapeHtml(description)}</p>` : '',
+      `<small>[${index + 1}]</small>`,
+      '</section>',
+    ].filter(Boolean).join('');
+  }).join('');
+  return {
+    answer: `<section class="ai-fact-panel"><h3>数据库事实</h3><p>当前资料库共有 <strong>${hits.length}</strong> 条资料。</p></section>${cards}`,
+    sources: hits.map(toSource),
+    grounded: true,
+    intent: 'resource_inventory',
+    facts: hits.map((hit) => ({
+      type: 'resource',
+      id: Number(hit.metadata.entityId),
+      publicId: hit.metadata.resourcePublicId,
+      title: hit.metadata.title,
+      fileName: hit.metadata.fileName,
+      mimeType: hit.metadata.mimeType,
+      status: hit.metadata.textStatus,
+    })),
+    suggestions: [],
+    actionRequests: [],
+  };
 }
 
 function emptyAttachmentAnswer(question) {
@@ -1525,9 +1736,12 @@ async function answerAttachmentQuestion(question, options = {}) {
 
 async function answerDeterministicQuestion(question, options = {}) {
   return (await answerIncompleteTasks(question, options))
+    || (await answerCompletedTasks(question, options))
     || (await answerTaskOverview(question, options))
     || (await answerLogPeriod(question, options))
     || (await answerTaskProgress(question, options))
+    || (await answerNoteInventory(question, options))
+    || (await answerResourceInventory(question, options))
     || (await answerAttachmentQuestion(question, options));
 }
 
@@ -1678,7 +1892,9 @@ async function createAnswerContext(question, options = {}) {
   const databaseContext = prepared
     ? [
         '[数据库结构化查询结果]',
+        `系统已确认记录数：${preparedSources.length}。${preparedSources.length ? '这些记录真实存在，最终回答必须逐项承认，禁止回答为零。' : '本次结构化查询结果确实为零。'}`,
         htmlToDatabaseText(prepared.answer) || '查询结果为 0 条。',
+        prepared.facts?.length ? `[结构化事实 JSON]\n${JSON.stringify(prepared.facts)}` : '',
         ...preparedSources.map((source, index) => `[${index + 1}] ${source.excerpt || source.label || ''}`),
       ].filter(Boolean).join('\n\n')
     : hits.length
@@ -1723,7 +1939,7 @@ function buildAnswerMessages(question, context, history = [], intent = 'general'
     ...normalizeChatHistory(history),
     {
       role: 'user',
-      content: `问题意图：${intent}\n当前问题：${question}\n\n本次任务台数据库查询结果：\n${context}\n\n${channelInstruction}\n请依据查询结果生成最终回答。如果存在待审批操作，只能说明已经生成待审批操作，禁止说成已经执行。`,
+      content: `问题意图：${intent}\n当前问题：${question}\n\n本次任务台数据库查询结果：\n${context}\n\n${channelInstruction}\n请依据查询结果生成最终回答。结构化查询记录数大于零时，禁止回答“没有找到”“没有查到”或“资料不足”，并应列出查询到的项目。如果存在待审批操作，只能说明已经生成待审批操作，禁止说成已经执行。`,
     },
   ];
 }

@@ -51,11 +51,13 @@ const [{ planAiActionRequest }, { answerWorkspace, classifyAiQueryIntent, stream
 
 const marker = `__ai_chat_smoke_${Date.now()}__`;
 let taskId;
+let completedTaskId;
 let logId;
 let taskNoteId;
 let independentNoteId;
 let taskAttachmentId;
 let noteAttachmentId;
+let resourceId;
 let actionId;
 
 try {
@@ -69,6 +71,15 @@ try {
     [marker, '验证 AI 对话以数据库为准'],
   );
   taskId = Number(taskResult.insertId);
+
+  const [completedTaskResult] = await db.query(
+    `
+      INSERT INTO tasks (title, description, priority, progress, status, tags, sort_order)
+      VALUES (?, ?, 'medium', 100, 'done', 'ai-smoke', 9998)
+    `,
+    [`${marker} 已完成任务`, '验证已完成任务清单查询'],
+  );
+  completedTaskId = Number(completedTaskResult.insertId);
 
   const [logResult] = await db.query(
     `
@@ -124,9 +135,37 @@ try {
   );
   noteAttachmentId = Number(noteAttachmentResult.insertId);
 
+  const [[workspace]] = await db.query('SELECT id FROM workspaces WHERE is_default = 1 ORDER BY id LIMIT 1');
+  const [resourceResult] = await db.query(
+    `
+      INSERT INTO resources (public_id, workspace_id, kind, title, description, status, ai_visibility)
+      VALUES (UUID(), ?, 'file', ?, 'AI 资料库清单测试', 'ready', 'allow')
+    `,
+    [workspace.id, `${marker} 资料库文件`],
+  );
+  resourceId = Number(resourceResult.insertId);
+  const [versionResult] = await db.query(
+    `
+      INSERT INTO resource_versions
+        (public_id, resource_id, version_no, original_name, stored_name, relative_path, storage_key, mime_type, file_size)
+      VALUES (UUID(), ?, 1, ?, ?, ?, ?, 'application/pdf', 256)
+    `,
+    [resourceId, `${marker}-资料库.pdf`, `${marker}-resource.pdf`, `resources/${marker}-resource.pdf`, `resources/${marker}-resource.pdf`],
+  );
+  await db.query(
+    `
+      INSERT INTO resource_contents (version_id, status, parser, extracted_text, summary, text_chars)
+      VALUES (?, 'completed', 'pdf', ?, '资料库回归测试摘要', ?)
+    `,
+    [versionResult.insertId, `${marker} 资料库 PDF 正文`, `${marker} 资料库 PDF 正文`.length],
+  );
+
   assert.equal(classifyAiQueryIntent('我还有哪些任务没有完成？'), 'incomplete_tasks');
   assert.equal(classifyAiQueryIntent('今天做了什么？'), 'log_today');
   assert.equal(classifyAiQueryIntent('请问我有哪些任务？'), 'task_overview');
+  assert.equal(classifyAiQueryIntent('我的资料库都有什么文件'), 'resource_inventory');
+  assert.equal(classifyAiQueryIntent('现在都有什么笔记'), 'note_inventory');
+  assert.equal(classifyAiQueryIntent('现在已经完成的任务有哪些？'), 'completed_tasks');
   assert.equal(classifyAiQueryIntent(`把${marker}改成已完成`), 'action');
 
   const incomplete = await answerWorkspace('我还有哪些任务没有完成？');
@@ -170,6 +209,24 @@ try {
   assert.equal(missingNote.intent, 'note_search');
   assert.equal(missingNote.sources.length, 0);
 
+  const resourceInventory = await answerWorkspace('我的资料库都有什么文件');
+  assert.equal(resourceInventory.intent, 'resource_inventory');
+  assert.ok(resourceInventory.sources.some((source) => source.entityType === 'resource' && Number(source.entityId) === resourceId));
+  assert.ok(resourceInventory.sources.every((source) => source.entityType === 'resource'));
+  assert.ok(resourceInventory.facts.some((fact) => fact.type === 'resource' && fact.id === resourceId));
+
+  const noteInventory = await answerWorkspace('现在都有什么笔记');
+  assert.equal(noteInventory.intent, 'note_inventory');
+  assert.ok(noteInventory.sources.some((source) => source.entityType === 'note' && Number(source.entityId) === taskNoteId));
+  assert.ok(noteInventory.sources.some((source) => source.entityType === 'note' && Number(source.entityId) === independentNoteId));
+  assert.ok(noteInventory.sources.every((source) => source.entityType === 'note'));
+
+  const completedTasks = await answerWorkspace('现在已经完成的任务有哪些？');
+  assert.equal(completedTasks.intent, 'completed_tasks');
+  assert.ok(completedTasks.sources.some((source) => source.entityType === 'task' && Number(source.entityId) === completedTaskId));
+  assert.ok(completedTasks.sources.every((source) => source.entityType === 'task'));
+  assert.ok(completedTasks.facts.every((fact) => fact.status === 'done'));
+
   const actionPlan = await planAiActionRequest(`帮我把${marker}改成已完成`, {
     requestedBy: 'ai-chat-smoke',
   });
@@ -193,14 +250,16 @@ try {
   assert.equal(unchangedTask.status, 'in_progress');
   assert.equal(Number(unchangedTask.progress), 35);
 
-  assert.equal(modelCalls.length, 8);
+  assert.equal(modelCalls.length, 11);
   assert.ok(modelCalls.every((call) => call.prompt.includes('本次任务台数据库查询结果')));
+  assert.ok(modelCalls.some((call) => call.prompt.includes('系统已确认记录数') && call.prompt.includes('资料库')));
   assert.equal(modelCalls.filter((call) => call.stream).length, 1);
 
   console.log('AI chat smoke test passed: every answer uses the model with database context and approval-only actions.');
 } finally {
   const db = getPool();
   if (actionId) await db.query('DELETE FROM mcp_action_requests WHERE id = ?', [actionId]);
+  if (resourceId) await db.query('DELETE FROM resources WHERE id = ?', [resourceId]);
   if (taskAttachmentId) await db.query("DELETE FROM attachment_text_cache WHERE attachment_kind = 'task' AND attachment_id = ?", [taskAttachmentId]);
   if (noteAttachmentId) await db.query('DELETE FROM note_attachments WHERE id = ?', [noteAttachmentId]);
   if (taskAttachmentId) await db.query('DELETE FROM task_attachments WHERE id = ?', [taskAttachmentId]);
@@ -208,6 +267,7 @@ try {
   if (independentNoteId) await db.query('DELETE FROM task_notes WHERE id = ?', [independentNoteId]);
   if (logId) await db.query('DELETE FROM work_logs WHERE id = ?', [logId]);
   if (taskId) await db.query('DELETE FROM tasks WHERE id = ?', [taskId]);
+  if (completedTaskId) await db.query('DELETE FROM tasks WHERE id = ?', [completedTaskId]);
   await closePool();
   await new Promise((resolve) => modelServer.close(resolve));
 }
