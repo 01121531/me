@@ -54,6 +54,8 @@ let taskId;
 let logId;
 let taskNoteId;
 let independentNoteId;
+let taskAttachmentId;
+let noteAttachmentId;
 let actionId;
 
 try {
@@ -94,6 +96,34 @@ try {
   );
   independentNoteId = Number(independentNoteResult.insertId);
 
+  const [taskAttachmentResult] = await db.query(
+    `
+      INSERT INTO task_attachments
+        (task_id, original_name, stored_name, relative_path, mime_type, file_size, note)
+      VALUES (?, ?, ?, ?, 'application/pdf', 128, 'AI 附件清单测试')
+    `,
+    [taskId, `${marker}-资料.pdf`, `${marker}-task.pdf`, `uploads/task-attachments/${marker}-task.pdf`],
+  );
+  taskAttachmentId = Number(taskAttachmentResult.insertId);
+  await db.query(
+    `
+      INSERT INTO attachment_text_cache
+        (attachment_kind, attachment_id, status, parser, text, text_chars)
+      VALUES ('task', ?, 'completed', 'pdf', ?, ?)
+    `,
+    [taskAttachmentId, `${marker} PDF 正文`, `${marker} PDF 正文`.length],
+  );
+
+  const [noteAttachmentResult] = await db.query(
+    `
+      INSERT INTO note_attachments
+        (note_id, original_name, stored_name, relative_path, mime_type, file_size, note)
+      VALUES (?, ?, ?, ?, 'image/jpeg', 64, 'AI 图片清单测试')
+    `,
+    [independentNoteId, `${marker}-图片.jpg`, `${marker}-note.jpg`, `uploads/note-attachments/${marker}-note.jpg`],
+  );
+  noteAttachmentId = Number(noteAttachmentResult.insertId);
+
   assert.equal(classifyAiQueryIntent('我还有哪些任务没有完成？'), 'incomplete_tasks');
   assert.equal(classifyAiQueryIntent('今天做了什么？'), 'log_today');
   assert.equal(classifyAiQueryIntent('请问我有哪些任务？'), 'task_overview');
@@ -122,6 +152,20 @@ try {
   assert.ok(progress.sources.some((source) => source.entityType === 'note' && Number(source.entityId) === taskNoteId));
   assert.ok(!progress.sources.some((source) => source.entityType === 'note' && Number(source.entityId) === independentNoteId));
 
+  const inventory = await answerWorkspace('全部的附件');
+  assert.equal(inventory.intent, 'attachment_search');
+  assert.ok(inventory.sources.some((source) => source.entityType === 'task_attachment' && Number(source.entityId) === taskAttachmentId));
+  assert.ok(inventory.sources.some((source) => source.entityType === 'note_attachment' && Number(source.entityId) === noteAttachmentId));
+  assert.ok(inventory.sources.every((source) => source.entityType.endsWith('_attachment')));
+
+  const pdfReply = await answerWorkspace('你给我发一个 PDF');
+  assert.ok(pdfReply.sources.some((source) => Number(source.entityId) === taskAttachmentId));
+  assert.ok(pdfReply.sources.every((source) => source.mimeType === 'application/pdf' || /\.pdf$/i.test(source.fileName || '')));
+
+  const missingNote = await answerWorkspace(`${marker}-不存在的关键词相关笔记`);
+  assert.equal(missingNote.intent, 'note_search');
+  assert.equal(missingNote.sources.length, 0);
+
   const actionPlan = await planAiActionRequest(`帮我把${marker}改成已完成`, {
     requestedBy: 'ai-chat-smoke',
   });
@@ -144,7 +188,7 @@ try {
   assert.equal(unchangedTask.status, 'in_progress');
   assert.equal(Number(unchangedTask.progress), 35);
 
-  assert.equal(modelCalls.length, 5);
+  assert.equal(modelCalls.length, 8);
   assert.ok(modelCalls.every((call) => call.prompt.includes('本次任务台数据库查询结果')));
   assert.equal(modelCalls.filter((call) => call.stream).length, 1);
 
@@ -152,6 +196,9 @@ try {
 } finally {
   const db = getPool();
   if (actionId) await db.query('DELETE FROM mcp_action_requests WHERE id = ?', [actionId]);
+  if (taskAttachmentId) await db.query("DELETE FROM attachment_text_cache WHERE attachment_kind = 'task' AND attachment_id = ?", [taskAttachmentId]);
+  if (noteAttachmentId) await db.query('DELETE FROM note_attachments WHERE id = ?', [noteAttachmentId]);
+  if (taskAttachmentId) await db.query('DELETE FROM task_attachments WHERE id = ?', [taskAttachmentId]);
   if (taskNoteId) await db.query('DELETE FROM task_notes WHERE id = ?', [taskNoteId]);
   if (independentNoteId) await db.query('DELETE FROM task_notes WHERE id = ?', [independentNoteId]);
   if (logId) await db.query('DELETE FROM work_logs WHERE id = ?', [logId]);

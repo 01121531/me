@@ -359,7 +359,37 @@ function parsePositiveId(text, label) {
 }
 
 function isMediaSaveCommand(text) {
-  return /保存(?:到|至|为).*(任务|笔记)|(?:任务|笔记).*(?:保存|存入)/i.test(String(text || ''));
+  return /(?:保存|存入|放到|放进|归档).*(?:任务|笔记)|(?:任务|笔记).*(?:保存|存入|放到|放进|归档)|(?:新建|新创|创建).{0,8}笔记/i.test(String(text || ''));
+}
+
+function instructionValue(text, labelPattern, nextLabelPattern) {
+  const match = String(text || '').match(new RegExp(
+    `(?:${labelPattern})\\s*(?:命名)?\\s*(?:为|是|叫|：|:)\\s*[“\"']?(.+?)[”\"']?(?=\\s*(?:，|,|。|；|;|\\n|$)(?:\\s*(?:${nextLabelPattern}))?|$)`,
+    'i',
+  ));
+  return match?.[1]?.trim() || '';
+}
+
+function namedAttachmentFile(requestedName, originalName) {
+  const requested = String(requestedName || '').trim();
+  if (!requested) return String(originalName || '微信附件');
+  const sourceExtension = path.extname(String(originalName || ''));
+  const requestedExtension = path.extname(requested);
+  return requestedExtension || !sourceExtension ? requested : `${requested}${sourceExtension}`;
+}
+
+export function parseWeixinMediaSaveInstruction(text, originalName = '') {
+  const input = String(text || '').trim();
+  const createAsNote = /(?:保存|存入|放到|放进).{0,12}(?:一个|一篇)?(?:新建|新创|新的)?笔记|(?:新建|新创|创建).{0,8}笔记|保存为(?:一篇|一个)?笔记/i.test(input);
+  const content = instructionValue(input, '笔记内容|内容', '图片|文件|附件|笔记标题|标题|分类');
+  const title = instructionValue(input, '笔记标题|标题', '图片|文件|附件|笔记内容|内容|分类');
+  const requestedFileName = instructionValue(input, '图片(?:名称|名)?|文件(?:名称|名)?|附件(?:名称|名)?', '笔记标题|标题|笔记内容|内容|分类');
+  return {
+    createAsNote,
+    content,
+    title,
+    originalName: namedAttachmentFile(requestedFileName, originalName),
+  };
 }
 
 function mediaSavePlan(answer, actionRequests = []) {
@@ -385,7 +415,8 @@ async function createMediaSaveRequests(text, accountId, peerId, currentMedia = [
 
   const taskId = parsePositiveId(text, '任务');
   const noteId = parsePositiveId(text, '笔记');
-  const createAsNote = /保存为(?:一篇|一个)?笔记/i.test(text);
+  const instruction = parseWeixinMediaSaveInstruction(text, media[0]?.original_name);
+  const createAsNote = instruction.createAsNote;
   if (!taskId && !noteId && !createAsNote) {
     return mediaSavePlan('请说明保存位置，例如“保存到任务 #3”“保存到笔记 #8”或“保存为笔记”。');
   }
@@ -409,8 +440,9 @@ async function createMediaSaveRequests(text, accountId, peerId, currentMedia = [
         ...(taskId ? { taskId } : {}),
         ...(noteId ? { noteId } : {}),
         ...(createAsNote ? {
-          title: path.parse(item.original_name).name.slice(0, 160) || '微信资料',
-          content: item.extracted_text || `来自微信的附件：${item.original_name}`,
+          title: (instruction.title || instruction.content || path.parse(item.original_name).name).slice(0, 160) || '微信资料',
+          content: instruction.content || item.extracted_text || `来自微信的附件：${item.original_name}`,
+          originalName: namedAttachmentFile(instruction.originalName, item.original_name),
         } : {}),
         note: '来自微信对话，确认后保存',
       },
@@ -431,7 +463,28 @@ function referencesRecentMedia(text) {
 }
 
 function wantsAttachmentReply(question) {
-  return /(?:发|发送|传|给我|下载).{0,12}(?:文件|附件|图片)|(?:文件|附件|图片).{0,12}(?:发|发送|传|给我)/i.test(question);
+  return /(?:发|发送|传|给我|下载).{0,12}(?:文件|附件|图片|pdf|文档)|(?:文件|附件|图片|pdf|文档).{0,12}(?:发|发送|传|给我)/i.test(question);
+}
+
+export function selectAttachmentSourcesForReply(question, sources = []) {
+  const text = String(question || '');
+  let matches = sources.filter((source) => /_attachment$/.test(source?.entityType || ''));
+  if (/pdf/i.test(text)) {
+    matches = matches.filter((source) => source.mimeType === 'application/pdf' || /\.pdf$/i.test(source.fileName || ''));
+  } else if (/图片|图像|截图|照片/.test(text)) {
+    matches = matches.filter((source) => String(source.mimeType || '').startsWith('image/'));
+  }
+  const seen = new Set();
+  matches = matches.filter((source) => {
+    const key = `${source.entityType}:${source.entityId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  if (/(?:全部|所有|都).{0,8}(?:发|发送|传)|(?:发|发送|传).{0,8}(?:全部|所有|都)/.test(text)) {
+    return matches.slice(0, 5);
+  }
+  return matches.slice(0, 1);
 }
 
 async function attachmentRowFromSource(source) {
@@ -450,28 +503,32 @@ async function attachmentRowFromSource(source) {
 
 async function sendRequestedAttachment(peerId, contextToken, question, sources) {
   if (!wantsAttachmentReply(question)) return false;
-  const attachmentSources = (sources || []).filter((source) => /_attachment$/.test(source.entityType || ''));
-  if (attachmentSources.length !== 1) return false;
-  const row = await attachmentRowFromSource(attachmentSources[0]);
-  if (!row) return false;
-  const buffer = await readStoredAttachment(row, config.weixin.maxMediaBytes);
-  await fsp.mkdir(outboundRoot, { recursive: true });
-  const filePath = path.join(outboundRoot, `${crypto.randomUUID()}-${path.basename(row.original_name || '附件')}`);
-  await fsp.writeFile(filePath, buffer, { mode: 0o600 });
-  try {
-    await sendWeixinMedia({
-      ...credentials,
-      to: peerId,
-      contextToken,
-      filePath,
-      originalName: row.original_name,
-      mimeType: row.mime_type,
-    });
-    patchState({ lastOutboundAt: nowIso() });
-    return true;
-  } finally {
-    await fsp.unlink(filePath).catch(() => {});
+  const attachmentSources = selectAttachmentSourcesForReply(question, sources);
+  if (!attachmentSources.length) return false;
+  let sent = 0;
+  for (const source of attachmentSources) {
+    const row = await attachmentRowFromSource(source);
+    if (!row) continue;
+    const buffer = await readStoredAttachment(row, config.weixin.maxMediaBytes);
+    await fsp.mkdir(outboundRoot, { recursive: true });
+    const filePath = path.join(outboundRoot, `${crypto.randomUUID()}-${path.basename(row.original_name || '附件')}`);
+    await fsp.writeFile(filePath, buffer, { mode: 0o600 });
+    try {
+      await sendWeixinMedia({
+        ...credentials,
+        to: peerId,
+        contextToken,
+        filePath,
+        originalName: row.original_name,
+        mimeType: row.mime_type,
+      });
+      sent += 1;
+    } finally {
+      await fsp.unlink(filePath).catch(() => {});
+    }
   }
+  if (sent) patchState({ lastOutboundAt: nowIso() });
+  return sent > 0;
 }
 
 async function processIncomingMessage(message) {
@@ -505,6 +562,7 @@ async function processIncomingMessage(message) {
       messages: history,
       additionalContext: mediaContext(media),
       actionPlan,
+      channel: 'weixin',
     });
     await saveConversationExchange(conversation.id, question, result);
     const plainText = htmlToPlainText(result.answer || '暂时没有可用回答。');

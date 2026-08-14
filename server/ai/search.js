@@ -13,7 +13,7 @@ const workspaceAssistantPrompt = [
   '数据库事实只能来自下方提供的任务台资料；查询结果为零也是有效事实，资料不足时必须明确说明缺少什么，禁止自行补全。',
   '回答使用中文，简洁，并在相关句子后标注来源编号，例如 [1]。',
   '只有查询资料中实际存在对应的 [编号] 来源时才能标注该编号；零结果或没有编号来源时禁止生成 [1] 等引用。',
-  '回答必须把事实和建议分开：事实放在标题为“数据库事实”的区块；只有用户需要分析或下一步时才增加标题为“AI 建议”的区块。',
+  '回答要清楚区分数据库事实与 AI 建议；网页回答可以使用“数据库事实 / AI 建议”区块，微信短答应直接自然地回答，不必机械重复标题。',
   '建议必须明确标注为建议，不得把建议描述成已经发生的任务、日志、日期、进度或附件内容。',
   '输出可嵌入页面的安全 HTML 片段，不要输出完整 html、head 或 body。',
   '不要使用 Markdown 语法，不要输出 **加粗**、- 列表、反引号代码块；必须直接使用 HTML 标签表达结构。',
@@ -269,6 +269,11 @@ function isTodayLogQuestion(question) {
 
 function isWeekLogQuestion(question) {
   return /本周.*(?:做了|日志|记录|进展|工作)|这周.*(?:做了|日志|记录|进展|工作)|周报|本星期/.test(String(question || ''));
+}
+
+function isAttachmentInventoryQuestion(question) {
+  const text = String(question || '').trim();
+  return /(?:全部|所有|当前|现有|最近).{0,10}(?:附件|文件|pdf|图片)|(?:附件|文件).{0,10}(?:都有|有哪些|清单|列表|内容)|(?:发|发送|传|给我).{0,12}(?:一个|一份|任意|随便)?.{0,6}(?:pdf|附件|文件|图片)/i.test(text);
 }
 
 function hasActionSignal(question) {
@@ -542,6 +547,12 @@ function attachmentNode(row, entityType, ownerIdKey, score = 0.35) {
       downloadUrl: urlBase ? `${urlBase}/${row.id}/download` : null,
       copyText: row.original_name,
       ownerId: row[ownerIdKey] ? Number(row[ownerIdKey]) : null,
+      fileSize: Number(row.file_size || 0),
+      createdAt: row.created_at || null,
+      textStatus: row.text_status || null,
+      parser: row.text_parser || null,
+      textChars: Number(row.text_chars || 0),
+      textError: row.text_error || '',
       searchMode: 'keyword',
     },
   };
@@ -1235,43 +1246,116 @@ async function answerTaskProgress(question, options = {}) {
   };
 }
 
-async function answerAttachmentQuestion(question, options = {}) {
-  if (classifyAiQueryIntent(question) !== 'attachment_search') return null;
-  let hits = (await keywordHits(question, { ...options, limit: 10 }))
-    .filter((hit) => hitEntityType(hit).endsWith('_attachment'));
-  if (!hits.length) {
-    const taskId = normalizeTaskId(options.taskId);
-    const params = [];
-    const taskFilter = taskId ? 'AND t.id = ?' : '';
-    if (taskId) params.push(taskId);
-    const [rows] = await getPool().query(
+function attachmentTypeFilter(question) {
+  const text = String(question || '');
+  if (/pdf/i.test(text)) return "AND (LOWER(a.mime_type) = 'application/pdf' OR LOWER(a.original_name) LIKE '%.pdf')";
+  if (/图片|图像|截图|照片/.test(text)) return "AND a.mime_type LIKE 'image/%'";
+  return '';
+}
+
+async function attachmentInventoryHits(question, options = {}) {
+  const taskId = normalizeTaskId(options.taskId);
+  const limit = normalizeLimit(options.limit, 20, 50);
+  const typeFilter = attachmentTypeFilter(question);
+  const taskParams = taskId ? [taskId] : [];
+  const taskFilter = taskId ? 'AND a.task_id = ?' : '';
+  const logFilter = taskId ? 'AND l.task_id = ?' : '';
+  const noteFilter = taskId ? 'AND n.task_id = ?' : '';
+  const rowLimit = Math.max(limit, 20);
+
+  const [taskRows, logRows, noteRows] = await Promise.all([
+    getPool().query(
       `
-        SELECT a.*, t.title AS task_title, t.title AS owner_title, c.text AS cached_text
+        SELECT a.*, t.title AS task_title, t.title AS owner_title,
+          c.status AS text_status, c.parser AS text_parser, c.text AS cached_text,
+          c.text_chars, c.error_message AS text_error
         FROM task_attachments a
         JOIN tasks t ON t.id = a.task_id
         LEFT JOIN attachment_text_cache c
           ON c.attachment_kind = 'task' AND c.attachment_id = a.id
-        WHERE a.deleted_at IS NULL AND t.deleted_at IS NULL ${taskFilter}
+        WHERE a.deleted_at IS NULL AND t.deleted_at IS NULL ${taskFilter} ${typeFilter}
         ORDER BY a.created_at DESC, a.id DESC
-        LIMIT 8
+        LIMIT ?
       `,
-      params,
-    );
-    hits = rows.map((row) => withMatchedFields(
-      attachmentNode(row, 'task_attachment', 'task_id', 0.55),
-      ['最近任务附件'],
-      0.55,
+      [...taskParams, rowLimit],
+    ).then(([rows]) => rows.map((row) => attachmentNode(row, 'task_attachment', 'task_id', 0.88))),
+    getPool().query(
+      `
+        SELECT a.*, l.task_id, t.title AS task_title,
+          CONCAT(t.title, ' / ', DATE_FORMAT(l.log_date, '%Y-%m-%d'), ' 日志') AS owner_title,
+          c.status AS text_status, c.parser AS text_parser, c.text AS cached_text,
+          c.text_chars, c.error_message AS text_error
+        FROM log_attachments a
+        JOIN work_logs l ON l.id = a.log_id
+        JOIN tasks t ON t.id = l.task_id
+        LEFT JOIN attachment_text_cache c
+          ON c.attachment_kind = 'log' AND c.attachment_id = a.id
+        WHERE a.deleted_at IS NULL AND l.deleted_at IS NULL AND t.deleted_at IS NULL ${logFilter} ${typeFilter}
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT ?
+      `,
+      [...taskParams, rowLimit],
+    ).then(([rows]) => rows.map((row) => attachmentNode(row, 'log_attachment', 'log_id', 0.86))),
+    getPool().query(
+      `
+        SELECT a.*, n.task_id, t.title AS task_title, n.title AS owner_title,
+          c.status AS text_status, c.parser AS text_parser, c.text AS cached_text,
+          c.text_chars, c.error_message AS text_error
+        FROM note_attachments a
+        JOIN task_notes n ON n.id = a.note_id
+        LEFT JOIN tasks t ON t.id = n.task_id
+        LEFT JOIN attachment_text_cache c
+          ON c.attachment_kind = 'note' AND c.attachment_id = a.id
+        WHERE a.deleted_at IS NULL AND n.deleted_at IS NULL
+          AND (n.task_id IS NULL OR t.deleted_at IS NULL) ${noteFilter} ${typeFilter}
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT ?
+      `,
+      [...taskParams, rowLimit],
+    ).then(([rows]) => rows.map((row) => attachmentNode(row, 'note_attachment', 'note_id', 0.84))),
+  ]);
+
+  return [...taskRows, ...logRows, ...noteRows]
+    .sort((left, right) => String(right.metadata.createdAt || '').localeCompare(String(left.metadata.createdAt || '')))
+    .slice(0, limit)
+    .map((hit) => withSourceReason(
+      withMatchedFields(hit, ['附件清单'], hit.score),
+      '当前附件清单',
     ));
-  }
-  if (!hits.length) return null;
-  const relevantHits = dedupeHits(hits).slice(0, 8).map((hit) => withSourceReason(hit, '附件名称或识别文字匹配'));
+}
+
+function emptyAttachmentAnswer(question) {
+  const type = /pdf/i.test(String(question || '')) ? 'PDF' : /图片|图像|截图|照片/.test(String(question || '')) ? '图片' : '附件';
+  return {
+    answer: `<section class="ai-fact-panel"><h3>数据库事实</h3><p>当前任务台没有可用的${type}记录。</p></section>`,
+    sources: [],
+    grounded: true,
+    intent: 'attachment_search',
+    facts: [],
+    suggestions: [],
+    actionRequests: [],
+  };
+}
+
+async function answerAttachmentQuestion(question, options = {}) {
+  if (classifyAiQueryIntent(question) !== 'attachment_search') return null;
+  const inventoryQuestion = isAttachmentInventoryQuestion(question);
+  let hits = inventoryQuestion
+    ? await attachmentInventoryHits(question, { ...options, limit: 30 })
+    : (await keywordHits(question, { ...options, limit: 12 }))
+      .filter((hit) => hitEntityType(hit).endsWith('_attachment'));
+  if (!hits.length) return emptyAttachmentAnswer(question);
+  const relevantHits = dedupeHits(hits).slice(0, 30).map((hit) => withSourceReason(
+    hit,
+    inventoryQuestion ? '当前附件清单' : '附件名称或识别文字匹配',
+  ));
   const cards = relevantHits.map((hit, index) => {
     const metadata = hit.metadata || {};
     const content = cleanText(hit.text.replace(/^附件：[^ ]+\s*/, '')).slice(0, 420);
     return [
       '<section class="ai-file-panel">',
       `<h3>${escapeHtml(metadata.fileName || metadata.title || `附件 ${index + 1}`)}</h3>`,
-      `<p>${escapeHtml(content || '数据库中没有可用的附件文字。')}</p>`,
+      `<p>${escapeHtml(content || (metadata.textStatus === 'failed' ? '附件文字识别失败。' : '数据库中还没有可用的附件文字。'))}</p>`,
       `<small>[${index + 1}]</small>`,
       '</section>',
     ].join('');
@@ -1286,6 +1370,8 @@ async function answerAttachmentQuestion(question, options = {}) {
       id: Number(hit.metadata.entityId),
       fileName: hit.metadata.fileName,
       parser: hit.metadata.parser || null,
+      mimeType: hit.metadata.mimeType,
+      textStatus: hit.metadata.textStatus,
     })),
     suggestions: [],
     actionRequests: [],
@@ -1411,11 +1497,10 @@ async function retrieveWorkspaceHits(question, options = {}) {
   const combined = dedupeHits([...keywordResults, ...semanticResults]).slice(0, limit);
   if (combined.length) return combined;
   if (isTaskLikeIntent(intent)) return [];
-  if (isNoteLikeIntent(intent)) {
-    return filterHitsForIntent(await recentHits({ ...options, limit }), question, intent);
-  }
+  if (isNoteLikeIntent(intent)) return [];
   if (intent !== 'general') return [];
-  return filterHitsForIntent(await recentHits({ ...options, limit }), question, intent);
+  return filterHitsForIntent(await recentHits({ ...options, limit }), question, intent)
+    .filter((hit) => taskSourceTypes.has(hitEntityType(hit)));
 }
 
 async function createAnswerContext(question, options = {}) {
@@ -1470,13 +1555,16 @@ async function createAnswerContext(question, options = {}) {
   };
 }
 
-function buildAnswerMessages(question, context, history = [], intent = 'general') {
+function buildAnswerMessages(question, context, history = [], intent = 'general', options = {}) {
+  const channelInstruction = options.channel === 'weixin'
+    ? '这是微信私聊。请直接、自然、简短地回答；除非用户明确要求分析，不要输出“数据库事实”或“AI 建议”等机械标题，不要使用复杂表格。可以使用短段落或简短列表。'
+    : '这是任务台网页对话。可以使用清晰的 HTML 数据面板、列表或表格组织信息。';
   return [
     { role: 'system', content: workspaceAssistantPrompt },
     ...normalizeChatHistory(history),
     {
       role: 'user',
-      content: `问题意图：${intent}\n当前问题：${question}\n\n本次任务台数据库查询结果：\n${context}\n\n请依据查询结果生成最终回答。先给出“数据库事实”；如果问题需要判断、规划或下一步，再单独给出“AI 建议”。如果存在待审批操作，只能说明已经生成待审批操作，禁止说成已经执行。`,
+      content: `问题意图：${intent}\n当前问题：${question}\n\n本次任务台数据库查询结果：\n${context}\n\n${channelInstruction}\n请依据查询结果生成最终回答。如果存在待审批操作，只能说明已经生成待审批操作，禁止说成已经执行。`,
     },
   ];
 }
@@ -1529,7 +1617,7 @@ export async function answerWorkspace(question, options = {}) {
   const { sources, context, intent, grounded, facts, actionRequests } = await createAnswerContext(question, options);
 
   const response = await getChatModel().chat({
-    messages: buildAnswerMessages(question, context, options.messages, intent),
+    messages: buildAnswerMessages(question, context, options.messages, intent, options),
   });
   const answer = messageToText(response.message.content) || emptyModelAnswer;
   return {
@@ -1554,7 +1642,7 @@ export async function streamAnswerWorkspace(question, options = {}, handlers = {
     model: config.ai.litellm.chatModel,
     temperature: 0.2,
     stream: true,
-    messages: buildAnswerMessages(question, context, options.messages, intent),
+    messages: buildAnswerMessages(question, context, options.messages, intent, options),
   };
 
   if (!config.ai.litellm.apiKey || !config.ai.litellm.chatModel) {

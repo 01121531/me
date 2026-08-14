@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { promises as fsp } from 'fs';
 import path from 'path';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -152,7 +153,7 @@ export function scheduleAttachmentTextExtraction(kind, id, options = {}) {
   }, 0);
 }
 
-async function describeImageBatch(images, { title, pageOffset = 0, kind = 'image' } = {}) {
+async function describeImageBatchWithModel(images, { title, pageOffset = 0, kind = 'image' } = {}) {
   assertOcrConfiguration();
   const parts = [
     {
@@ -198,6 +199,56 @@ async function describeImageBatch(images, { title, pageOffset = 0, kind = 'image
   return trimText(json.choices?.[0]?.message?.content || '');
 }
 
+function bufferFromImagePart(image) {
+  if (Buffer.isBuffer(image?.buffer)) return image.buffer;
+  const match = String(image?.dataUrl || '').match(/^data:[^;]+;base64,(.+)$/);
+  return match ? Buffer.from(match[1], 'base64') : null;
+}
+
+async function recognizeImageBatchLocally(images) {
+  const { createWorker, PSM } = await import('tesseract.js');
+  const cachePath = path.resolve(process.cwd(), '.deploy', 'tesseract-cache');
+  await fsp.mkdir(cachePath, { recursive: true });
+  const worker = await createWorker(['chi_sim', 'eng'], undefined, {
+    cachePath,
+    logger: () => {},
+  });
+  try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+      preserve_interword_spaces: '1',
+    });
+    const chunks = [];
+    for (const [index, image] of images.entries()) {
+      const buffer = bufferFromImagePart(image);
+      if (!buffer) continue;
+      const result = await worker.recognize(buffer);
+      const text = trimText(result.data?.text || '');
+      if (text) chunks.push(images.length > 1 ? `第 ${index + 1} 页\n${text}` : text);
+    }
+    return trimText(chunks.join('\n\n'));
+  } finally {
+    await worker.terminate();
+  }
+}
+
+async function describeImageBatch(images, options = {}) {
+  try {
+    const text = await describeImageBatchWithModel(images, options);
+    if (text) return { text, parser: 'vision' };
+  } catch (modelError) {
+    try {
+      const text = await recognizeImageBatchLocally(images);
+      if (text) return { text, parser: 'local-ocr' };
+    } catch (localError) {
+      throw new Error(`视觉模型不可用：${modelError.message}；本地 OCR 失败：${localError.message}`);
+    }
+    throw modelError;
+  }
+  const text = await recognizeImageBatchLocally(images);
+  return { text, parser: 'local-ocr' };
+}
+
 function dataUrl(mimeType, buffer) {
   return `data:${mimeType};base64,${Buffer.from(buffer).toString('base64')}`;
 }
@@ -211,7 +262,7 @@ async function imageBufferToDataUrl(buffer, mimeType) {
   const context = canvas.getContext('2d');
   context.drawImage(image, 0, 0, width, height);
   const jpeg = await canvas.encode('jpeg');
-  return dataUrl('image/jpeg', jpeg);
+  return { dataUrl: dataUrl('image/jpeg', jpeg), buffer: jpeg };
 }
 
 async function renderPdfPages(buffer) {
@@ -240,6 +291,7 @@ async function renderPdfPages(buffer) {
       images.push({
         pageNumber,
         dataUrl: dataUrl('image/jpeg', jpeg),
+        buffer: jpeg,
       });
       page.cleanup?.();
     }
@@ -261,12 +313,22 @@ async function describePdfPages(attachment, buffer) {
 
   for (let index = 0; index < images.length; index += batchSize) {
     const batch = images.slice(index, index + batchSize);
-    const text = await describeImageBatch(batch, {
+    const described = await describeImageBatch(batch, {
       title: attachment.original_name,
       pageOffset: index,
       kind: 'pdf',
     });
-    if (text) chunks.push(text);
+    if (described.text) chunks.push(described.text);
+    if (described.parser === 'local-ocr' && index + batchSize < images.length) {
+      const remaining = await recognizeImageBatchLocally(images.slice(index + batchSize));
+      if (remaining) chunks.push(remaining);
+      return {
+        parser: 'pdf-local-ocr',
+        text: trimText(chunks.join('\n\n')),
+        pageCount,
+        truncated,
+      };
+    }
   }
 
   return {
@@ -301,15 +363,14 @@ async function extractPdfTextOrVision(attachment, buffer) {
 }
 
 async function extractImageDescription(attachment, buffer) {
-  const image = {
-    dataUrl: await imageBufferToDataUrl(buffer, attachment.mime_type || 'image/jpeg'),
-  };
+  const image = await imageBufferToDataUrl(buffer, attachment.mime_type || 'image/jpeg');
+  const described = await describeImageBatch([image], {
+    title: attachment.original_name,
+    kind: 'image',
+  });
   return {
-    parser: 'image-vision',
-    text: await describeImageBatch([image], {
-      title: attachment.original_name,
-      kind: 'image',
-    }),
+    parser: described.parser === 'local-ocr' ? 'image-local-ocr' : 'image-vision',
+    text: described.text,
     pageCount: 1,
     truncated: false,
   };

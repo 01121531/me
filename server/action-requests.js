@@ -7,6 +7,7 @@ import {
 } from './ai/attachment-cache.js';
 import { activeStorageProvider, persistUploadedFile } from './storage.js';
 import { promises as fsp } from 'fs';
+import path from 'path';
 import {
   markTemporaryMediaSaved,
   sanitizeWeixinFileName,
@@ -448,7 +449,12 @@ async function persistWeixinMediaAttachment(connection, payload, ownerKind) {
   );
   if (!ownerRows.length) throw new Error(ownerKind === 'task' ? '任务不存在。' : '笔记不存在。');
 
-  const originalName = sanitizeWeixinFileName(media.original_name);
+  const sourceName = sanitizeWeixinFileName(media.original_name);
+  const requestedName = sanitizeWeixinFileName(payload.originalName || sourceName);
+  const sourceExtension = path.extname(sourceName);
+  const originalName = path.extname(requestedName) || !sourceExtension
+    ? requestedName
+    : `${requestedName}${sourceExtension}`;
   const storedName = `${Date.now()}-${crypto.randomUUID()}-${originalName}`;
   const attachmentKind = ownerKind === 'task' ? 'task-attachments' : 'note-attachments';
   const provider = activeStorageProvider();
