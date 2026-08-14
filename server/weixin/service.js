@@ -73,6 +73,12 @@ function publicState() {
     temporaryMediaTtlHours: config.weixin.tempTtlHours,
     maxMediaMb: Math.round(config.weixin.maxMediaBytes / 1024 / 1024),
     privateChatOnly: true,
+    canSendResources: Boolean(
+      runtime.connected
+      && credentials?.token
+      && credentials?.replyPeerId
+      && credentials?.replyContextToken,
+    ),
   };
 }
 
@@ -171,6 +177,23 @@ function queueCredentialSave() {
     await fsp.rename(temporaryPath, credentialPath);
   }).catch((error) => appendLog(`微信状态保存失败：${error.message}`));
   return credentialWrite;
+}
+
+function rememberReplyContext(peerId, contextToken) {
+  const normalizedPeerId = String(peerId || '').trim();
+  const normalizedContextToken = String(contextToken || '').trim();
+  if (!credentials || !normalizedPeerId || !normalizedContextToken) return;
+  if (
+    credentials.replyPeerId === normalizedPeerId
+    && credentials.replyContextToken === normalizedContextToken
+  ) return;
+  credentials = {
+    ...credentials,
+    replyPeerId: normalizedPeerId,
+    replyContextToken: normalizedContextToken,
+  };
+  queueCredentialSave();
+  publishState();
 }
 
 function abortLogin() {
@@ -463,17 +486,41 @@ function referencesRecentMedia(text) {
 }
 
 function wantsAttachmentReply(question) {
-  return /(?:发|发送|传|给我|下载).{0,12}(?:文件|附件|图片|pdf|文档)|(?:文件|附件|图片|pdf|文档).{0,12}(?:发|发送|传|给我)/i.test(question);
+  return /(?:发|发送|传|给我|下载).{0,12}(?:文件|附件|图片|pdf|文档)|(?:文件|附件|图片|pdf|文档).{0,12}(?:发|发送|传|给我)|(?:发|发送|传|给我)\s*(?:第\s*)?\d+\s*(?:个|份|条)?|第\s*\d+\s*(?:个|份|条)?/i.test(question);
+}
+
+function isSendableSource(source) {
+  const entityType = String(source?.entityType || '');
+  if (/_attachment$/.test(entityType)) return Boolean(source.fileName);
+  return entityType === 'resource' && Boolean(source.fileName && source.downloadUrl);
+}
+
+function sourceFileLabel(source, index = 0) {
+  return String(source?.fileName || source?.label || `文件 ${index + 1}`).trim();
+}
+
+function preferNamedSources(question, sources) {
+  const compactQuestion = String(question || '').toLowerCase().replace(/\s+/g, '');
+  const exact = sources.filter((source) => {
+    const fileName = sourceFileLabel(source).toLowerCase();
+    const baseName = path.parse(fileName).name.replace(/\s+/g, '');
+    return baseName.length >= 2 && compactQuestion.includes(baseName);
+  });
+  return exact.length ? exact : sources;
 }
 
 export function selectAttachmentSourcesForReply(question, sources = []) {
   const text = String(question || '');
-  let matches = sources.filter((source) => /_attachment$/.test(source?.entityType || ''));
+  let matches = sources.filter(isSendableSource);
+  if (/资料库|资料中心/.test(text)) {
+    matches = matches.filter((source) => source.entityType === 'resource');
+  }
   if (/pdf/i.test(text)) {
     matches = matches.filter((source) => source.mimeType === 'application/pdf' || /\.pdf$/i.test(source.fileName || ''));
   } else if (/图片|图像|截图|照片/.test(text)) {
     matches = matches.filter((source) => String(source.mimeType || '').startsWith('image/'));
   }
+  matches = preferNamedSources(text, matches);
   const seen = new Set();
   matches = matches.filter((source) => {
     const key = `${source.entityType}:${source.entityId}`;
@@ -481,13 +528,67 @@ export function selectAttachmentSourcesForReply(question, sources = []) {
     seen.add(key);
     return true;
   });
-  if (/(?:全部|所有|都).{0,8}(?:发|发送|传)|(?:发|发送|传).{0,8}(?:全部|所有|都)/.test(text)) {
-    return matches.slice(0, 5);
+  return matches.slice(0, 5);
+}
+
+export function parseWeixinAttachmentSelection(question) {
+  const match = String(question || '').trim().match(/(?:发|发送|传|给我)\s*(?:第\s*)?(\d+)\s*(?:个|份|条)?|第\s*(\d+)\s*(?:个|份|条)?/);
+  const index = Number(match?.[1] || match?.[2] || 0);
+  return Number.isInteger(index) && index > 0 && index <= 5 ? index - 1 : null;
+}
+
+async function latestAttachmentCandidates(conversationId) {
+  const [rows] = await getPool().query(
+    `
+      SELECT sources_json
+      FROM ai_messages
+      WHERE conversation_id = ? AND role = 'assistant' AND sources_json IS NOT NULL
+      ORDER BY id DESC
+      LIMIT 8
+    `,
+    [conversationId],
+  );
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.sources_json || '{}');
+      const candidates = (parsed.sources || []).filter(isSendableSource).slice(0, 5);
+      if (candidates.length) return candidates;
+    } catch {
+      // Ignore an older malformed source snapshot and inspect the next one.
+    }
   }
-  return matches.slice(0, 1);
+  return [];
+}
+
+async function latestResourceFileRow(value) {
+  const numericValue = Number(value);
+  const useNumericId = Number.isInteger(numericValue) && numericValue > 0;
+  const where = useNumericId ? 'r.id = ?' : 'r.public_id = ?';
+  const [rows] = await getPool().query(
+    `
+      SELECT v.*, COALESCE(v.original_name, r.title) AS original_name,
+        r.id AS resource_id, r.public_id AS resource_public_id, r.title AS resource_title
+      FROM resources r
+      JOIN resource_versions v
+        ON v.resource_id = r.id
+       AND v.version_no = (
+         SELECT MAX(latest.version_no)
+         FROM resource_versions latest
+         WHERE latest.resource_id = r.id
+       )
+      WHERE ${where} AND r.deleted_at IS NULL AND r.kind = 'file'
+        AND v.storage_key IS NOT NULL
+      LIMIT 1
+    `,
+    [useNumericId ? numericValue : String(value || '').trim()],
+  );
+  return rows[0] || null;
 }
 
 async function attachmentRowFromSource(source) {
+  if (source?.entityType === 'resource') {
+    return latestResourceFileRow(source.entityId);
+  }
   const configByType = {
     log_attachment: { table: 'log_attachments' },
     note_attachment: { table: 'note_attachments' },
@@ -501,34 +602,78 @@ async function attachmentRowFromSource(source) {
   return rows[0] || null;
 }
 
+async function sendStoredRowToWeixin(peerId, contextToken, row) {
+  const buffer = await readStoredAttachment(row, config.weixin.maxMediaBytes);
+  await fsp.mkdir(outboundRoot, { recursive: true });
+  const originalName = path.basename(row.original_name || '附件');
+  const filePath = path.join(outboundRoot, `${crypto.randomUUID()}-${originalName}`);
+  await fsp.writeFile(filePath, buffer, { mode: 0o600 });
+  try {
+    await sendWeixinMedia({
+      ...credentials,
+      to: peerId,
+      contextToken,
+      filePath,
+      originalName,
+      mimeType: row.mime_type,
+    });
+  } finally {
+    await fsp.unlink(filePath).catch(() => {});
+  }
+}
+
 async function sendRequestedAttachment(peerId, contextToken, question, sources) {
   if (!wantsAttachmentReply(question)) return false;
   const attachmentSources = selectAttachmentSourcesForReply(question, sources);
   if (!attachmentSources.length) return false;
+  const sendAll = /(?:全部|所有|都).{0,8}(?:发|发送|传)|(?:发|发送|传).{0,8}(?:全部|所有|都)/.test(question);
+  if (attachmentSources.length > 1 && !sendAll && parseWeixinAttachmentSelection(question) === null) {
+    const choices = attachmentSources
+      .map((source, index) => `${index + 1}. ${sourceFileLabel(source, index)}`)
+      .join('\n');
+    await sendTextReply(peerId, contextToken, `找到多份匹配文件，请回复“发第 1 个”等序号：\n${choices}`);
+    return false;
+  }
+  const selectedSources = sendAll ? attachmentSources : attachmentSources.slice(0, 1);
   let sent = 0;
-  for (const source of attachmentSources) {
+  for (const source of selectedSources) {
     const row = await attachmentRowFromSource(source);
     if (!row) continue;
-    const buffer = await readStoredAttachment(row, config.weixin.maxMediaBytes);
-    await fsp.mkdir(outboundRoot, { recursive: true });
-    const filePath = path.join(outboundRoot, `${crypto.randomUUID()}-${path.basename(row.original_name || '附件')}`);
-    await fsp.writeFile(filePath, buffer, { mode: 0o600 });
-    try {
-      await sendWeixinMedia({
-        ...credentials,
-        to: peerId,
-        contextToken,
-        filePath,
-        originalName: row.original_name,
-        mimeType: row.mime_type,
-      });
-      sent += 1;
-    } finally {
-      await fsp.unlink(filePath).catch(() => {});
-    }
+    await sendStoredRowToWeixin(peerId, contextToken, row);
+    sent += 1;
   }
   if (sent) patchState({ lastOutboundAt: nowIso() });
   return sent > 0;
+}
+
+export async function sendResourceToWeixin(value) {
+  if (!runtime.connected || !credentials?.token) {
+    const error = new Error('微信当前未连接，请先在设置中扫码连接。');
+    error.statusCode = 409;
+    throw error;
+  }
+  if (!credentials.replyPeerId || !credentials.replyContextToken) {
+    const error = new Error('请先用扫码账号给任务台发送一条微信消息，再从网站发送资料。');
+    error.statusCode = 409;
+    throw error;
+  }
+  const row = await latestResourceFileRow(value);
+  if (!row) {
+    const error = new Error('该资料没有可发送的文件版本。');
+    error.statusCode = 404;
+    throw error;
+  }
+  await sendStoredRowToWeixin(credentials.replyPeerId, credentials.replyContextToken, row);
+  patchState({ lastOutboundAt: nowIso() });
+  appendLog(`已从网站发送资料到微信：${row.original_name}`);
+  return {
+    resourceId: Number(row.resource_id),
+    resourcePublicId: row.resource_public_id,
+    title: row.resource_title,
+    fileName: row.original_name,
+    versionNo: Number(row.version_no || 0),
+    sentAt: nowIso(),
+  };
 }
 
 async function processIncomingMessage(message) {
@@ -539,6 +684,7 @@ async function processIncomingMessage(message) {
     return;
   }
   const contextToken = message.context_token || '';
+  rememberReplyContext(peerId, contextToken);
   const text = incomingText(message);
   const receivedMedia = await receiveTemporaryMedia(message, credentials.accountId, peerId);
   const media = receivedMedia.length || !referencesRecentMedia(text)
@@ -553,6 +699,16 @@ async function processIncomingMessage(message) {
   try {
     const conversation = await ensureConversation(credentials.accountId, peerId);
     const history = await conversationHistory(conversation.id);
+    const selectionIndex = parseWeixinAttachmentSelection(question);
+    const previousCandidates = selectionIndex === null
+      ? []
+      : await latestAttachmentCandidates(conversation.id);
+    const selectedSource = selectionIndex === null ? null : previousCandidates[selectionIndex] || null;
+    const selectionContext = selectionIndex === null
+      ? ''
+      : selectedSource
+        ? `用户选择发送上一轮候选文件第 ${selectionIndex + 1} 个：${sourceFileLabel(selectedSource, selectionIndex)}。`
+        : '用户选择了上一轮文件序号，但该序号不存在或候选已经失效。';
     const mediaSave = await createMediaSaveRequests(question, credentials.accountId, peerId, receivedMedia);
     const actionPlan = mediaSave || await planAiActionRequest(question, {
       requestedBy: `weixin:${peerId}`,
@@ -560,14 +716,15 @@ async function processIncomingMessage(message) {
     });
     const result = await answerWorkspace(question, {
       messages: history,
-      additionalContext: mediaContext(media),
+      additionalContext: [mediaContext(media), selectionContext].filter(Boolean).join('\n\n'),
       actionPlan,
       channel: 'weixin',
     });
     await saveConversationExchange(conversation.id, question, result);
     const plainText = htmlToPlainText(result.answer || '暂时没有可用回答。');
     await sendTextReply(peerId, contextToken, plainText);
-    await sendRequestedAttachment(peerId, contextToken, question, result.sources || []).catch((error) => {
+    const replySources = selectedSource ? [selectedSource] : (result.sources || []);
+    await sendRequestedAttachment(peerId, contextToken, question, replySources).catch((error) => {
       appendLog(`微信附件回复失败：${error.message}`);
     });
   } catch (error) {

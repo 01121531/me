@@ -77,6 +77,7 @@ import {
   getWeixinStatus,
   initializeWeixinService,
   openWeixinEventStream,
+  sendResourceToWeixin,
   shutdownWeixinService,
   startWeixinLogin,
   submitWeixinVerifyCode,
@@ -1084,6 +1085,16 @@ app.post('/api/settings/weixin/verify', asyncRoute(async (req, res) => {
 
 app.post('/api/settings/weixin/disconnect', asyncRoute(async (_req, res) => {
   res.json(await disconnectWeixin());
+}));
+
+app.post('/api/settings/weixin/send-resource', asyncRoute(async (req, res) => {
+  const resourceId = String(req.body?.resourceId || '').trim();
+  if (!resourceId) {
+    const error = new Error('resourceId 不能为空。');
+    error.statusCode = 400;
+    throw error;
+  }
+  res.json(await sendResourceToWeixin(resourceId));
 }));
 
 app.patch('/api/settings/ai', asyncRoute(async (req, res) => {

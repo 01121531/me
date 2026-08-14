@@ -17,6 +17,7 @@ import {
   Plus,
   RefreshCw,
   Search,
+  Send,
   ShieldOff,
   Tags,
   Trash2,
@@ -323,6 +324,8 @@ function ResourceDetailDrawer({ resource, folders, tags, tasks, onClose, onChang
   const [versions, setVersions] = useState([]);
   const [form, setForm] = useState({ title: resource.title, description: resource.description, folderId: resource.folderId || '', aiVisibility: resource.aiVisibility, tagIds: resource.tags.map((tag) => tag.id) });
   const [busy, setBusy] = useState(false);
+  const [sendingWeixin, setSendingWeixin] = useState(false);
+  const [weixinStatus, setWeixinStatus] = useState(null);
   const [relationTaskId, setRelationTaskId] = useState('');
   const versionInput = useRef(null);
 
@@ -345,6 +348,11 @@ function ResourceDetailDrawer({ resource, folders, tags, tasks, onClose, onChang
   }
 
   useEffect(() => { reload().catch((error) => addToast?.('error', '资料读取失败', error.message)); }, [resource.id]);
+  useEffect(() => {
+    api.getWeixinStatus()
+      .then(setWeixinStatus)
+      .catch(() => setWeixinStatus({ connected: false, canSendResources: false }));
+  }, [resource.id]);
 
   async function save() {
     setBusy(true);
@@ -368,6 +376,19 @@ function ResourceDetailDrawer({ resource, folders, tags, tasks, onClose, onChang
       await onChanged();
     } catch (error) {
       addToast?.('error', '处理失败', error.message);
+    }
+  }
+
+  async function sendToWeixin() {
+    setSendingWeixin(true);
+    try {
+      const result = await api.sendResourceToWeixin(detail.publicId || detail.id);
+      addToast?.('success', '已发送到微信', `${result.fileName} 已发送到当前扫码账号。`);
+      setWeixinStatus((current) => ({ ...current, connected: true, canSendResources: true }));
+    } catch (error) {
+      addToast?.('error', '发送失败', error.message);
+    } finally {
+      setSendingWeixin(false);
     }
   }
 
@@ -437,6 +458,18 @@ function ResourceDetailDrawer({ resource, folders, tags, tasks, onClose, onChang
           <div className="resource-detail-actions">
             {detail.kind === 'link' && detail.latestVersion?.sourceUrl && <a className="resource-primary-button" href={detail.latestVersion.sourceUrl} target="_blank" rel="noreferrer"><ExternalLink size={17} />打开网页</a>}
             {detail.latestVersion?.downloadUrl && <a className="resource-primary-button" href={detail.latestVersion.downloadUrl}><Download size={17} />下载当前版本</a>}
+            {detail.latestVersion?.downloadUrl && (
+              <button
+                type="button"
+                className="resource-secondary-button"
+                onClick={sendToWeixin}
+                disabled={sendingWeixin || !weixinStatus?.canSendResources}
+                title={weixinStatus?.canSendResources ? '发送最新版本到当前扫码微信' : '请先连接微信，并用扫码账号给任务台发送一条消息'}
+              >
+                {sendingWeixin ? <LoaderCircle size={17} className="spin" /> : <Send size={17} />}
+                发送到微信
+              </button>
+            )}
             <button type="button" className="resource-secondary-button" onClick={reprocess}><RefreshCw size={17} />重新处理</button>
           </div>
 

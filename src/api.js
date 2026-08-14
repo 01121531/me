@@ -140,6 +140,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({}),
     }),
+  sendResourceToWeixin: (resourceId) =>
+    request('/settings/weixin/send-resource', {
+      method: 'POST',
+      body: JSON.stringify({ resourceId }),
+    }),
   checkOnlineUpdate: (payload = {}) =>
     request('/settings/update/check', {
       method: 'POST',
