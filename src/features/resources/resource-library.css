@@ -1,6 +1,6 @@
 .resource-library-page {
   width: 100%;
-  min-height: calc(100dvh - 112px);
+  min-height: calc(100dvh - 124px);
   color: var(--text-primary);
 }
 
@@ -9,7 +9,7 @@
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  padding: 8px 0 24px;
+  padding: 0 0 16px;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -273,7 +273,7 @@
   transition: background-color 160ms ease;
 }
 
-.resource-list-row:hover { background: color-mix(in srgb, var(--accent-light) 55%, transparent); }
+.resource-list-row:hover { background: color-mix(in srgb, var(--primary-light) 58%, transparent); }
 .resource-list-row:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
 
 .resource-list-icon,
@@ -284,8 +284,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 8px;
-  background: #eef2ff;
-  color: #4f46e5;
+  background: #eaf1ff;
+  color: #2563eb;
 }
 
 .resource-list-icon.kind-link,
@@ -293,7 +293,7 @@
 .resource-list-icon.kind-text,
 .resource-detail-icon.kind-text { background: #ecfdf5; color: #047857; }
 [data-theme='dark'] .resource-list-icon,
-[data-theme='dark'] .resource-detail-icon { background: #242354; color: #a5b4fc; }
+[data-theme='dark'] .resource-detail-icon { background: #172f4f; color: #93c5fd; }
 [data-theme='dark'] .resource-list-icon.kind-link,
 [data-theme='dark'] .resource-detail-icon.kind-link { background: #083344; color: #67e8f9; }
 [data-theme='dark'] .resource-list-icon.kind-text,
@@ -361,7 +361,7 @@
   max-height: min(820px, calc(100dvh - 40px));
   overflow: auto;
   border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--bg-modal);
   box-shadow: var(--shadow-xl);
   animation: resource-rise-in 210ms ease-out;
@@ -597,7 +597,7 @@
   .resource-list-summary { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
   .resource-list-tags { max-width: calc(100vw - 110px); }
   .resource-modal-backdrop { align-items: flex-end; padding: 0; }
-  .resource-modal { width: 100%; max-height: 94dvh; border-radius: 12px 12px 0 0; }
+  .resource-modal { width: 100%; max-height: 94dvh; border-radius: 8px 8px 0 0; }
   .resource-modal > header { padding: 18px 16px 14px; }
   .resource-mode-control { margin: 14px 16px 0; }
   .resource-create-form,

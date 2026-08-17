@@ -57,6 +57,7 @@ import {
   LayoutDashboard,
   LibraryBig,
   ListFilter,
+  Menu,
   Moon,
   Plus,
   RefreshCw,
@@ -94,6 +95,43 @@ const statusLabels = {
 };
 
 const columnStatuses = columns.map((column) => column.status);
+
+const workspaceViewMeta = {
+  today: { title: '今日工作台', description: '集中处理今天的任务、记录和资料。' },
+  board: { title: '任务看板', description: '按阶段安排任务，跟踪进度与截止时间。' },
+  report: { title: '工作汇总', description: '查看日报、周报和工时数据。' },
+  notes: { title: '笔记', description: '管理独立笔记和任务相关记录。' },
+  resources: { title: '资料库', description: '统一整理文件、链接和文本资料。' },
+  attachments: { title: '附件中心', description: '检索、预览和管理工作区附件。' },
+  ai: { title: 'AI 助手', description: '基于当前任务、笔记和资料进行问答。' },
+  trash: { title: '回收站', description: '查看和恢复已删除的内容。' },
+  system: { title: '系统设置', description: '管理 AI、微信连接、安全与在线更新。' },
+};
+
+const workspaceNavGroups = [
+  {
+    label: '工作',
+    items: [
+      { id: 'today', label: '今日', icon: Clock3 },
+      { id: 'board', label: '任务看板', icon: LayoutDashboard },
+      { id: 'report', label: '工作汇总', icon: BarChart3 },
+    ],
+  },
+  {
+    label: '知识',
+    items: [
+      { id: 'notes', label: '笔记', icon: FileText },
+      { id: 'resources', label: '资料库', icon: LibraryBig },
+      { id: 'attachments', label: '附件中心', icon: Paperclip },
+    ],
+  },
+  {
+    label: '智能',
+    items: [
+      { id: 'ai', label: 'AI 助手', icon: Sparkles },
+    ],
+  },
+];
 
 const emptyTaskForm = {
   title: '',
@@ -857,6 +895,7 @@ function TaskBoardApp() {
   const [isApprovalsOpen, setIsApprovalsOpen] = useState(false);
   const [actionRequests, setActionRequests] = useState([]);
   const [actionRequestsLoading, setActionRequestsLoading] = useState(false);
+  const [isNavigationOpen, setIsNavigationOpen] = useState(false);
 
   // Theme state
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
@@ -896,10 +935,19 @@ function TaskBoardApp() {
   }, [theme]);
 
   useEffect(() => {
-    const locked = Boolean(selectedTask || isTaskModalOpen || isApprovalsOpen);
+    const locked = Boolean(selectedTask || isTaskModalOpen || isApprovalsOpen || isNavigationOpen);
     document.body.classList.toggle('scroll-locked', locked);
     return () => document.body.classList.remove('scroll-locked');
-  }, [selectedTask, isTaskModalOpen, isApprovalsOpen]);
+  }, [selectedTask, isTaskModalOpen, isApprovalsOpen, isNavigationOpen]);
+
+  useEffect(() => {
+    if (!isNavigationOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setIsNavigationOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [isNavigationOpen]);
 
   // Toast Helpers
   const addToast = (type, title, message) => {
@@ -1286,109 +1334,130 @@ function TaskBoardApp() {
 
   return (
     <div className="app-shell">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">个人工作记录</p>
-          <h1>助理任务台</h1>
+      <a className="skip-link" href="#workspace-main">跳到主要内容</a>
+      {isNavigationOpen && (
+        <button
+          type="button"
+          className="app-nav-scrim"
+          aria-label="关闭导航"
+          onClick={() => setIsNavigationOpen(false)}
+        />
+      )}
+
+      <aside id="workspace-navigation" className={isNavigationOpen ? 'app-sidebar is-open' : 'app-sidebar'}>
+        <div className="app-brand">
+          <span className="app-brand-mark" aria-hidden="true"><CheckCircle2 size={22} /></span>
+          <div>
+            <strong>个人智能工作区</strong>
+            <span>任务 · 笔记 · 资料</span>
+          </div>
+          <button
+            type="button"
+            className="app-sidebar-close"
+            aria-label="关闭导航"
+            onClick={() => setIsNavigationOpen(false)}
+          >
+            <X size={18} />
+          </button>
         </div>
-        <div className="top-actions">
+
+        <nav className="app-navigation" aria-label="主导航">
+          {workspaceNavGroups.map((group) => (
+            <section className="app-nav-group" key={group.label}>
+              <p>{group.label}</p>
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    className={view === item.id ? 'app-nav-item active' : 'app-nav-item'}
+                    onClick={() => {
+                      setView(item.id);
+                      setIsNavigationOpen(false);
+                    }}
+                    aria-current={view === item.id ? 'page' : undefined}
+                  >
+                    <Icon size={18} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </section>
+          ))}
+        </nav>
+
+        <div className="app-sidebar-footer">
           <button
-            className="theme-toggle-btn"
-            onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
-            title={theme === 'light' ? '切换到深色模式' : '切换到浅色模式'}
-            aria-label="切换主题"
-          >
-            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
-          </button>
-          <button
-            className={view === 'today' ? 'icon-button active' : 'icon-button'}
-            onClick={() => setView('today')}
-            title="今日工作台"
-          >
-            <Clock3 size={18} />
-            <span>今日</span>
-          </button>
-          <button
-            className={view === 'board' ? 'icon-button active' : 'icon-button'}
-            onClick={() => setView('board')}
-            title="任务看板"
-          >
-            <LayoutDashboard size={18} />
-            <span>看板</span>
-          </button>
-          <button
-            className={view === 'report' ? 'icon-button active' : 'icon-button'}
-            onClick={() => setView('report')}
-            title="日报周报"
-          >
-            <BarChart3 size={18} />
-            <span>汇总</span>
-          </button>
-          <button
-            className={view === 'notes' ? 'icon-button active' : 'icon-button'}
-            onClick={() => setView('notes')}
-            title="独立笔记"
-          >
-            <FileText size={18} />
-            <span>笔记</span>
-          </button>
-          <button
-            className={view === 'resources' ? 'icon-button active' : 'icon-button'}
-            onClick={() => setView('resources')}
-            title="统一资料库"
-          >
-            <LibraryBig size={18} />
-            <span>资料库</span>
-          </button>
-          <button
-            className={view === 'attachments' ? 'icon-button active' : 'icon-button'}
-            onClick={() => setView('attachments')}
-            title="附件中心"
-          >
-            <Paperclip size={18} />
-            <span>附件</span>
-          </button>
-          <button
-            className={view === 'ai' ? 'icon-button ai-search-button active' : 'icon-button ai-search-button'}
-            onClick={() => setView('ai')}
-            title="AI"
-          >
-            <Search size={18} />
-            <span>智能检索</span>
-          </button>
-          <button
-            className={view === 'trash' ? 'icon-button active' : 'icon-button'}
-            onClick={() => setView('trash')}
-            title="回收站"
+            type="button"
+            className={view === 'trash' ? 'app-nav-item active' : 'app-nav-item'}
+            onClick={() => {
+              setView('trash');
+              setIsNavigationOpen(false);
+            }}
           >
             <Trash2 size={18} />
             <span>回收站</span>
           </button>
           <button
-            className={view === 'system' ? 'icon-button active' : 'icon-button'}
-            onClick={() => setView('system')}
-            title="设置"
+            type="button"
+            className={view === 'system' ? 'app-nav-item active' : 'app-nav-item'}
+            onClick={() => {
+              setView('system');
+              setIsNavigationOpen(false);
+            }}
           >
             <Settings size={18} />
-            <span>设置</span>
+            <span>系统设置</span>
           </button>
+          <button
+            type="button"
+            className="app-nav-item"
+            onClick={() => setTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+            title={theme === 'light' ? '切换到深色模式' : '切换到浅色模式'}
+            aria-label="切换主题"
+          >
+            {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+            <span>{theme === 'light' ? '深色模式' : '浅色模式'}</span>
+          </button>
+        </div>
+      </aside>
+
+      <div className="app-body">
+        <header className="topbar">
+          <button
+            type="button"
+            className="mobile-nav-trigger"
+            onClick={() => setIsNavigationOpen(true)}
+            aria-label="打开导航"
+            aria-controls="workspace-navigation"
+            aria-expanded={isNavigationOpen}
+          >
+            <Menu size={20} />
+          </button>
+          <div className="topbar-heading">
+            <p className="eyebrow">个人智能工作区</p>
+            <h1>{workspaceViewMeta[view]?.title || '工作台'}</h1>
+            <span>{workspaceViewMeta[view]?.description}</span>
+          </div>
+          <div className="top-actions">
           <button
             className={actionRequests.length ? 'icon-button approval-button has-pending' : 'icon-button approval-button'}
             onClick={() => setIsApprovalsOpen(true)}
             title="AI 与外部操作审批"
           >
             <ShieldCheck size={18} />
-            <span>审批</span>
+            <span>待审批</span>
             {actionRequests.length > 0 && <em>{actionRequests.length}</em>}
           </button>
           <button className="icon-button primary" onClick={() => openCreateTask('todo')} title="新建任务">
             <Plus size={18} />
-            <span>新建</span>
+            <span>新建任务</span>
           </button>
-        </div>
-      </header>
+          </div>
+        </header>
 
-      <main className="workspace">
+        <main className="workspace" id="workspace-main">
 
         {error && (
           <div className="notice">
@@ -1495,7 +1564,8 @@ function TaskBoardApp() {
             }}
           />
         )}
-      </main>
+        </main>
+      </div>
 
       {selectedTask && (
         <TaskDrawer
