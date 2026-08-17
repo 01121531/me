@@ -590,8 +590,8 @@ export default function ResourceLibraryView({ tasks = [], addToast, askConfirm, 
 
   return (
     <section className="resource-library-page">
-      <header className="resource-library-header">
-        <div><span className="resource-kicker">个人智能资料工作区</span><h2>资料库</h2><p>文件、网页和文本统一保存；目录与标签只由你创建。</p></div>
+      <header className="resource-library-header content-command-bar">
+        <div><span className="resource-kicker">当前资料</span><h2>{resources.length} 项内容</h2><p>文件、网页和文本统一保存；目录与标签只由你创建。</p></div>
         <div className="resource-header-actions">
           <button type="button" className="resource-secondary-button" onClick={() => setTaxonomy('folder')}><FolderOpen size={17} />目录</button>
           <button type="button" className="resource-secondary-button" onClick={() => setTaxonomy('tag')}><Tags size={17} />标签</button>

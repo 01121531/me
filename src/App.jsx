@@ -1782,11 +1782,11 @@ function TodayWorkbenchView({
 
   return (
     <section className="today-workbench">
-      <div className="today-head">
+      <div className="today-head content-command-bar">
         <div>
-          <p className="eyebrow">今日工作台</p>
+          <p className="eyebrow">时间范围</p>
           <h2>{rangeLabel}</h2>
-          <span>任务、日志、笔记和附件的当前处理视图</span>
+          <span>以下内容会随选择的日期范围同步更新</span>
         </div>
         <div className="range-switch" role="group" aria-label="工作台日期范围">
           <button type="button" className={mode === 'today' ? 'active' : ''} onClick={() => selectRange('today')}>
@@ -1840,10 +1840,10 @@ function TodayWorkbenchView({
       {error && <div className="notice">{error}</div>}
 
       <div className="workbench-metrics">
-        <WorkbenchMetric label="未完成任务" value={data?.metrics?.activeTasks || 0} />
-        <WorkbenchMetric label="范围日志" value={data?.metrics?.logs || 0} />
-        <WorkbenchMetric label="投入耗时" value={`${data?.metrics?.totalHours || 0}h`} />
-        <WorkbenchMetric label="新增附件" value={data?.metrics?.attachments || 0} />
+        <WorkbenchMetric icon={ClipboardList} tone="primary" label="未完成任务" value={data?.metrics?.activeTasks || 0} />
+        <WorkbenchMetric icon={FileText} tone="accent" label="范围日志" value={data?.metrics?.logs || 0} />
+        <WorkbenchMetric icon={Clock3} tone="warning" label="投入耗时" value={`${data?.metrics?.totalHours || 0}h`} />
+        <WorkbenchMetric icon={Paperclip} tone="neutral" label="新增附件" value={data?.metrics?.attachments || 0} />
       </div>
 
       {loading && !data ? (
@@ -1933,11 +1933,14 @@ function TodayWorkbenchView({
   );
 }
 
-function WorkbenchMetric({ label, value }) {
+function WorkbenchMetric({ icon: Icon, tone = 'neutral', label, value }) {
   return (
-    <div className="workbench-metric">
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className={`workbench-metric ${tone}`}>
+      <span className="workbench-metric-icon" aria-hidden="true"><Icon size={18} /></span>
+      <div>
+        <span>{label}</span>
+        <strong>{value}</strong>
+      </div>
     </div>
   );
 }
@@ -4763,10 +4766,11 @@ function StandaloneNotesView({
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragCancel={handleDragCancel} onDragEnd={handleDragEnd}>
       <section className="standalone-notes-view">
-        <div className="notes-page-head">
+        <div className="notes-page-head content-command-bar">
           <div>
-            <p className="eyebrow">独立记录</p>
-            <h2>笔记</h2>
+            <p className="eyebrow">笔记范围</p>
+            <h2>{includeLinked ? '全部笔记' : '独立笔记'}</h2>
+            <span>点击卡片展开全文，长按卡片可调整排序</span>
           </div>
           <button type="button" className="icon-button primary" onClick={focusCreateNote}>
             <Plus size={16} />
@@ -8753,7 +8757,7 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
       <div className="report-toolbar">
         <label>
           <CalendarDays size={16} />
-          <span></span>
+          <span>从</span>
           <input
             type="date"
             value={dates.from}
@@ -8763,7 +8767,7 @@ function ReportView({ dates, onDatesChange, addToast, onNoteSaved }) {
         </label>
         <label>
           <CalendarDays size={16} />
-          <span></span>
+          <span>至</span>
           <input
             type="date"
             value={dates.to}
@@ -9093,10 +9097,11 @@ function AttachmentCenterView({ tasks, onOpenTask, onOpenNotes, addToast, askCon
 
   return (
     <section className="attachment-center-page">
-      <div className="section-heading">
+      <div className="section-heading content-command-bar">
         <div>
-          <p className="eyebrow">文件资料</p>
-          <h2>附件中心</h2>
+          <p className="eyebrow">当前结果</p>
+          <h2>{data.total || data.items?.length || 0} 个附件</h2>
+          <span>集中查看任务、日志和笔记中保存的文件</span>
         </div>
         <button className="ghost-button" type="button" onClick={() => loadAttachments()} disabled={loading}>
           <RefreshCw size={16} />
