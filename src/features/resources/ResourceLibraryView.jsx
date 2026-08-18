@@ -38,6 +38,49 @@ const descriptionStatusLabels = {
   failed: '生成失败',
 };
 
+const resourceFileExtensions = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.pdf', '.doc', '.docx',
+  '.xls', '.xlsx', '.csv', '.zip', '.rar', '.7z', '.tar', '.gz', '.txt', '.md',
+]);
+const resourceFileAccept = [...resourceFileExtensions].join(',');
+const maxResourceFileSize = 50 * 1024 * 1024;
+const maxResourceFiles = 10;
+
+function fileExtension(name) {
+  const normalized = String(name || '').toLowerCase();
+  const index = normalized.lastIndexOf('.');
+  return index >= 0 ? normalized.slice(index) : '';
+}
+
+function isArchiveFile(name) {
+  return ['.zip', '.rar', '.7z', '.tar', '.gz'].includes(fileExtension(name));
+}
+
+function mergeResourceFiles(current, incoming) {
+  const errors = [];
+  const unique = new Map(
+    current.map((file) => [`${file.name}:${file.size}:${file.lastModified}`, file]),
+  );
+
+  incoming.forEach((file) => {
+    if (!resourceFileExtensions.has(fileExtension(file.name))) {
+      errors.push(`${file.name}：不支持该文件格式`);
+      return;
+    }
+    if (file.size > maxResourceFileSize) {
+      errors.push(`${file.name}：超过 50 MB`);
+      return;
+    }
+    unique.set(`${file.name}:${file.size}:${file.lastModified}`, file);
+  });
+
+  const files = [...unique.values()];
+  if (files.length > maxResourceFiles) {
+    errors.push(`单次最多上传 ${maxResourceFiles} 个文件`);
+  }
+  return { files: files.slice(0, maxResourceFiles), errors };
+}
+
 function formatBytes(value) {
   const bytes = Number(value || 0);
   if (!bytes) return '0 B';
@@ -213,7 +256,28 @@ function CreateResourceDialog({ mode: initialMode, folders, tags, onClose, onCre
   const [url, setUrl] = useState('');
   const [content, setContent] = useState('');
   const [files, setFiles] = useState([]);
+  const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
+  const fileInputRef = useRef(null);
+
+  function addFiles(fileList) {
+    const result = mergeResourceFiles(files, Array.from(fileList || []));
+    setFiles(result.files);
+    if (result.errors.length) {
+      addToast?.('error', '部分文件未添加', result.errors.slice(0, 3).join('；'));
+    }
+  }
+
+  function dropFiles(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    setDragActive(false);
+    addFiles(event.dataTransfer.files);
+  }
+
+  function removeFile(fileToRemove) {
+    setFiles((current) => current.filter((file) => file !== fileToRemove));
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -281,12 +345,54 @@ function CreateResourceDialog({ mode: initialMode, folders, tags, onClose, onCre
         </div>
         <form className="resource-create-form" onSubmit={submit}>
           {mode === 'file' && (
-            <label className="resource-dropzone">
+            <div
+              className={`resource-dropzone ${dragActive ? 'is-dragging' : ''}`}
+              role="button"
+              tabIndex={0}
+              onClick={() => fileInputRef.current?.click()}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  fileInputRef.current?.click();
+                }
+              }}
+              onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }}
+              onDragOver={(event) => { event.preventDefault(); setDragActive(true); }}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget)) setDragActive(false);
+              }}
+              onDrop={dropFiles}
+            >
               <Upload size={24} />
-              <strong>{files.length ? `已选择 ${files.length} 个文件` : '选择文件或拖到这里'}</strong>
-              <span>图片、PDF、Office、文本和常见压缩包，单个不超过 50 MB</span>
-              <input type="file" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} />
-            </label>
+              <strong>{dragActive ? '松开即可添加文件' : '选择文件或拖到这里'}</strong>
+              <span>支持图片、PDF、Word、Excel、文本、ZIP、RAR、7Z、TAR、GZ；单个不超过 50 MB</span>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={resourceFileAccept}
+                onChange={(event) => {
+                  addFiles(event.target.files);
+                  event.target.value = '';
+                }}
+              />
+            </div>
+          )}
+          {mode === 'file' && files.length > 0 && (
+            <div className="resource-selected-files" aria-label={`已选择 ${files.length} 个文件`}>
+              <header><span>待上传文件</span><strong>{files.length} / {maxResourceFiles}</strong></header>
+              <div>
+                {files.map((file) => (
+                  <article key={`${file.name}:${file.size}:${file.lastModified}`}>
+                    <span className="resource-selected-file-icon">
+                      {file.type.startsWith('image/') ? <ImageIcon size={17} /> : isArchiveFile(file.name) ? <Archive size={17} /> : <File size={17} />}
+                    </span>
+                    <span><strong title={file.name}>{file.name}</strong><small>{formatBytes(file.size)}</small></span>
+                    <button type="button" className="resource-icon-button" onClick={() => removeFile(file)} aria-label={`移除 ${file.name}`}><X size={15} /></button>
+                  </article>
+                ))}
+              </div>
+            </div>
           )}
           <label>
             <span>标题{mode === 'file' ? '（单文件可选）' : ''}</span>
